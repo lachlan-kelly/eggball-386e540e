@@ -324,6 +324,15 @@ function EggballPage() {
               resetPositions();
             }
           }
+        } else if (celebrate > 0) {
+          // Goal celebration camera: clock paused, players free to run around.
+          celebrate = Math.max(0, celebrate - dt);
+          if (celebrate <= 0) {
+            celebrate = 0;
+            celebrateId = "";
+            countdown = 3;
+            resetPositions();
+          }
         } else {
           if (countdown > 0) {
             countdown = Math.max(0, countdown - dt);
