@@ -895,10 +895,35 @@ function EggballPage() {
       const all = Array.from(players.values());
       for (const p of all) {
         const kicking = p.kickUntil > now;
+        const skin = getSkin(p.skin);
+        const teamColor = p.team === "red" ? "#e23c3c" : "#3c6ee2";
+        ctx.save();
         ctx.beginPath();
         ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI * 2);
-        ctx.fillStyle = p.team === "red" ? "#e23c3c" : "#3c6ee2";
+        ctx.fillStyle = skin.color || teamColor;
         ctx.fill();
+        if (skin.flag) {
+          ctx.clip();
+          const bands = skin.flag.colors;
+          const n = bands.length;
+          for (let i = 0; i < n; i++) {
+            ctx.fillStyle = bands[i];
+            if (skin.flag.vertical) {
+              ctx.fillRect(p.x - PLAYER_R + (i * PLAYER_R * 2) / n, p.y - PLAYER_R, (PLAYER_R * 2) / n + 1, PLAYER_R * 2);
+            } else {
+              ctx.fillRect(p.x - PLAYER_R, p.y - PLAYER_R + (i * PLAYER_R * 2) / n, PLAYER_R * 2, (PLAYER_R * 2) / n + 1);
+            }
+          }
+        }
+        ctx.restore();
+        // Team ring so teams stay readable with any skin
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, PLAYER_R - 3, 0, Math.PI * 2);
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = teamColor;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI * 2);
         ctx.lineWidth = 3;
         ctx.strokeStyle = kicking ? "#ffffff" : "#000000";
         ctx.stroke();
@@ -924,6 +949,47 @@ function EggballPage() {
       ctx.lineWidth = 2;
       ctx.strokeStyle = "#333";
       ctx.stroke();
+
+      // Power-kick charge meter: a circle growing inside the ball
+      {
+        let charge = 0;
+        for (const p of all) charge = Math.max(charge, p.charge ?? 0);
+        if (charge > 0.02) {
+          ctx.beginPath();
+          ctx.arc(ball.x, ball.y, Math.max(1, BALL_R * charge), 0, Math.PI * 2);
+          ctx.fillStyle = charge >= 1 ? "#ffd43b" : "rgba(255, 140, 40, 0.75)";
+          ctx.fill();
+          if (charge >= 1) {
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, BALL_R + 3 + Math.sin(now / 90) * 2, 0, Math.PI * 2);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = "#ffd43b";
+            ctx.stroke();
+          }
+        }
+      }
+
+      // Particles (goal explosions / power-kick burst)
+      for (const pt of particles) {
+        const a = Math.max(0, pt.life / pt.maxLife);
+        ctx.globalAlpha = a;
+        if (pt.ring) {
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2);
+          ctx.lineWidth = 5;
+          ctx.strokeStyle = pt.color;
+          ctx.stroke();
+        } else if (pt.emoji) {
+          ctx.font = `${pt.size}px sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(pt.emoji, pt.x, pt.y);
+        } else {
+          ctx.fillStyle = pt.color;
+          ctx.fillRect(pt.x - pt.size / 2, pt.y - pt.size / 2, pt.size, pt.size);
+        }
+        ctx.globalAlpha = 1;
+      }
 
       // Countdown overlay
       if (countdown > 0 && !ended) {
@@ -1005,6 +1071,25 @@ function EggballPage() {
 
   const showMenu = !joined || menuOpen;
 
+  const buyItem = (id: string, price: number) => {
+    setShop((prev) => {
+      if (prev.owned.includes(id) || prev.money < price) return prev;
+      const next = { ...prev, money: prev.money - price, owned: [...prev.owned, id] };
+      shopRef.current = next;
+      saveShop(next);
+      return next;
+    });
+  };
+
+  const equipItem = (kind: "skin" | "explosion", id: string) => {
+    setShop((prev) => {
+      const next = { ...prev, [kind]: id } as ShopState;
+      shopRef.current = next;
+      saveShop(next);
+      return next;
+    });
+  };
+
   return (
     <div className="h-screen w-screen bg-neutral-900 text-white flex flex-col items-center overflow-hidden">
       <div className="flex items-center gap-6 text-2xl font-bold py-2 shrink-0">
@@ -1019,6 +1104,15 @@ function EggballPage() {
             Teams
           </button>
         )}
+        {joined && (
+          <button
+            onClick={() => setShopOpen(true)}
+            className="px-3 py-1 rounded-md bg-yellow-500 hover:bg-yellow-400 text-black text-sm font-bold"
+          >
+            Shop
+          </button>
+        )}
+        <span className="text-sm font-bold text-yellow-400">${shop.money}</span>
       </div>
       <div
         className="relative"
@@ -1033,7 +1127,15 @@ function EggballPage() {
           height={CANVAS_H}
           style={{ width: "100%", height: "100%", display: "block", borderRadius: 8 }}
         />
-        {showMenu && (
+        {shopOpen && (
+          <ShopPanel
+            shop={shop}
+            onBuy={buyItem}
+            onEquip={equipItem}
+            onClose={() => setShopOpen(false)}
+          />
+        )}
+        {showMenu && !shopOpen && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/70 rounded-lg">
             <div className="bg-neutral-800 rounded-xl p-8 shadow-2xl text-center max-w-sm">
               <h1 className="text-3xl font-bold mb-2">Eggball</h1>
