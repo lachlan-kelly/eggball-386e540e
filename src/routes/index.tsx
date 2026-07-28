@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { ShopPanel } from "@/components/ShopPanel";
+import { GOAL_REWARD, WIN_REWARD, getExplosion, getSkin, loadShop, saveShop, DEFAULT_SHOP, type ShopState } from "@/lib/shop";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -34,6 +36,8 @@ const KICK_REACH = 10; // extra px beyond touching to still land a kick
 const GAME_LENGTH = 5 * 60; // seconds
 const MERCY_LEAD = 5;
 const CANVAS_ASPECT = CANVAS_W / CANVAS_H;
+const CHARGE_TIME = 1.4; // seconds of ball contact to fully charge a power kick
+const POWER_MULT = 1.75;
 
 type Team = "red" | "blue" | null;
 
@@ -48,6 +52,9 @@ interface PlayerState {
   lastDirX: number;
   lastDirY: number;
   name: string;
+  skin?: string;
+  explosion?: string;
+  charge?: number; // 0..1 power-kick charge
 }
 
 interface BallState {
@@ -82,6 +89,8 @@ function EggballPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [connected, setConnected] = useState(false);
   const [nameInput, setNameInput] = useState("");
+  const [shopOpen, setShopOpen] = useState(false);
+  const [shop, setShop] = useState<ShopState>(DEFAULT_SHOP);
   const [score, setScore] = useState({ red: 0, blue: 0, timeLeft: GAME_LENGTH, countdown: 0, ended: false, winner: null as Team | "draw", intermission: 0 });
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -89,6 +98,27 @@ function EggballPage() {
   const teamRef = useRef<Team>(null);
   const joinedRef = useRef(false);
   const nameRef = useRef<string>("");
+  const shopRef = useRef<ShopState>(DEFAULT_SHOP);
+  const addMoneyRef = useRef<(n: number) => void>(() => {});
+
+  useEffect(() => {
+    const loaded = loadShop();
+    shopRef.current = loaded;
+    setShop(loaded);
+  }, []);
+  useEffect(() => {
+    shopRef.current = shop;
+  }, [shop]);
+  useEffect(() => {
+    addMoneyRef.current = (n: number) => {
+      setShop((prev) => {
+        const next = { ...prev, money: prev.money + n };
+        shopRef.current = next;
+        saveShop(next);
+        return next;
+      });
+    };
+  }, []);
 
   useEffect(() => {
     teamRef.current = team;
@@ -127,6 +157,7 @@ function EggballPage() {
   const sfxGoal = () => { playTone(660, 0.15, "sawtooth", 0.2, 880); setTimeout(() => playTone(880, 0.25, "sawtooth", 0.2, 1320), 120); };
   const sfxWhistle = () => playTone(1400, 0.35, "triangle", 0.15, 1800);
   const sfxPost = () => playTone(180, 0.06, "square", 0.15);
+  const sfxPower = () => { playTone(160, 0.22, "sawtooth", 0.22, 60); playTone(520, 0.18, "square", 0.14, 90); };
 
   useEffect(() => {
     const myId = myIdRef.current;
@@ -152,6 +183,54 @@ function EggballPage() {
     let camX = CANVAS_W / 2;
     let camY = CANVAS_H / 2;
     const knownIds = new Set<string>([myId]);
+    let myCharge = 0;
+    let prevCelebrate = 0;
+    let prevEnded = false;
+    type Particle = { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; color: string; emoji?: string; ring?: boolean; size: number };
+    let particles: Particle[] = [];
+
+    function spawnExplosion(x: number, y: number, explosionId?: string) {
+      const ex = getExplosion(explosionId);
+      if (ex.kind === "emoji") {
+        for (let i = 0; i < 22; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const sp = 120 + Math.random() * 320;
+          particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 120, life: 1.4, maxLife: 1.4, color: "#fff", emoji: ex.emojis![i % ex.emojis!.length], size: 20 + Math.random() * 16 });
+        }
+      } else if (ex.kind === "confetti") {
+        for (let i = 0; i < 60; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const sp = 100 + Math.random() * 420;
+          particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 160, life: 1.6, maxLife: 1.6, color: ex.colors![i % ex.colors!.length], size: 4 + Math.random() * 5 });
+        }
+      } else if (ex.kind === "firework") {
+        for (let burst = 0; burst < 3; burst++) {
+          for (let i = 0; i < 26; i++) {
+            const a = (i / 26) * Math.PI * 2;
+            const sp = 200 + burst * 90;
+            particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1.1 + burst * 0.2, maxLife: 1.1 + burst * 0.2, color: ex.colors![burst % ex.colors!.length], size: 4 });
+          }
+        }
+      }
+      // Every explosion gets a shockwave ring
+      const ringColor = ex.colors?.[0] ?? "#ffffff";
+      particles.push({ x, y, vx: 0, vy: 0, life: 0.7, maxLife: 0.7, color: ringColor, ring: true, size: 10 });
+    }
+
+    function updateParticles(dt: number) {
+      for (const p of particles) {
+        if (p.ring) {
+          p.size += 420 * dt;
+        } else {
+          p.vy += 520 * dt;
+          p.vx *= 0.99;
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+        }
+        p.life -= dt;
+      }
+      particles = particles.filter((p) => p.life > 0);
+    }
 
 
     const keys = new Set<string>();
@@ -296,11 +375,16 @@ function EggballPage() {
           lastDirX: t === "red" ? 1 : -1,
           lastDirY: 0,
           name: nameRef.current || `Player ${players.size + 1}`,
+          skin: shopRef.current.skin,
+          explosion: shopRef.current.explosion,
+          charge: 0,
         };
         players.set(myId, me);
       }
       if (me.team !== t) me.team = t;
       if (nameRef.current && me.name !== nameRef.current) me.name = nameRef.current;
+      me.skin = shopRef.current.skin;
+      me.explosion = shopRef.current.explosion;
       return me;
     }
 
@@ -449,6 +533,20 @@ function EggballPage() {
 
         // Kick input — direction is from player center toward ball (contact point),
         // so where you hit the ball determines where it goes (like Eggball/Beatball).
+        // Power-kick charge: builds while we're touching the ball, resets the
+        // instant contact is lost.
+        {
+          const cdx = ball.x - me.x;
+          const cdy = ball.y - me.y;
+          const cd = Math.hypot(cdx, cdy);
+          if (cd < PLAYER_R + BALL_R + 2) {
+            myCharge = Math.min(1, myCharge + dt / CHARGE_TIME);
+          } else {
+            myCharge = 0;
+          }
+          me.charge = myCharge;
+        }
+
         if ((keys.has("x") || keys.has(" ")) && me.kickUntil < now) {
           me.kickUntil = now + KICK_DURATION * 1000;
           const bdx = ball.x - me.x;
@@ -457,9 +555,23 @@ function EggballPage() {
           if (bd > 0 && bd < PLAYER_R + BALL_R + KICK_REACH) {
             const nx = bdx / bd;
             const ny = bdy / bd;
-            const nvx = nx * KICK_POWER;
-            const nvy = ny * KICK_POWER;
-            sfxKick();
+            const powered = myCharge >= 1;
+            const power = KICK_POWER * (powered ? POWER_MULT : 1);
+            const nvx = nx * power;
+            const nvy = ny * power;
+            if (powered) {
+              sfxPower();
+              for (let i = 0; i < 18; i++) {
+                const a = Math.atan2(ny, nx) + (Math.random() - 0.5) * 1.2;
+                const sp = 80 + Math.random() * 200;
+                particles.push({ x: ball.x, y: ball.y, vx: -Math.cos(a) * sp, vy: -Math.sin(a) * sp, life: 0.45, maxLife: 0.45, color: "#ffe066", size: 3 + Math.random() * 3 });
+              }
+              particles.push({ x: ball.x, y: ball.y, vx: 0, vy: 0, life: 0.4, maxLife: 0.4, color: "#ffe066", ring: true, size: 8 });
+            } else {
+              sfxKick();
+            }
+            myCharge = 0;
+            me.charge = 0;
             if (hostId === myId) {
               ball.vx = nvx;
               ball.vy = nvy;
@@ -686,6 +798,23 @@ function EggballPage() {
         }
       }
 
+      // Goal explosion + rewards (runs on every client from replicated state)
+      if (celebrate > 0 && prevCelebrate <= 0) {
+        const scorer = celebrateId === myId ? getMyPlayer() : players.get(celebrateId);
+        spawnExplosion(ball.x, ball.y, scorer?.explosion);
+        if (celebrateId === myId) addMoneyRef.current(GOAL_REWARD);
+      }
+      prevCelebrate = celebrate;
+
+      if (ended && !prevEnded) {
+        if (teamRef.current && joinedRef.current && winner === teamRef.current) {
+          addMoneyRef.current(WIN_REWARD);
+        }
+      }
+      prevEnded = ended;
+
+      updateParticles(dt);
+
       draw();
       requestAnimationFrame(tick);
     }
@@ -766,10 +895,35 @@ function EggballPage() {
       const all = Array.from(players.values());
       for (const p of all) {
         const kicking = p.kickUntil > now;
+        const skin = getSkin(p.skin);
+        const teamColor = p.team === "red" ? "#e23c3c" : "#3c6ee2";
+        ctx.save();
         ctx.beginPath();
         ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI * 2);
-        ctx.fillStyle = p.team === "red" ? "#e23c3c" : "#3c6ee2";
+        ctx.fillStyle = skin.color || teamColor;
         ctx.fill();
+        if (skin.flag) {
+          ctx.clip();
+          const bands = skin.flag.colors;
+          const n = bands.length;
+          for (let i = 0; i < n; i++) {
+            ctx.fillStyle = bands[i];
+            if (skin.flag.vertical) {
+              ctx.fillRect(p.x - PLAYER_R + (i * PLAYER_R * 2) / n, p.y - PLAYER_R, (PLAYER_R * 2) / n + 1, PLAYER_R * 2);
+            } else {
+              ctx.fillRect(p.x - PLAYER_R, p.y - PLAYER_R + (i * PLAYER_R * 2) / n, PLAYER_R * 2, (PLAYER_R * 2) / n + 1);
+            }
+          }
+        }
+        ctx.restore();
+        // Team ring so teams stay readable with any skin
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, PLAYER_R - 3, 0, Math.PI * 2);
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = teamColor;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI * 2);
         ctx.lineWidth = 3;
         ctx.strokeStyle = kicking ? "#ffffff" : "#000000";
         ctx.stroke();
@@ -795,6 +949,47 @@ function EggballPage() {
       ctx.lineWidth = 2;
       ctx.strokeStyle = "#333";
       ctx.stroke();
+
+      // Power-kick charge meter: a circle growing inside the ball
+      {
+        let charge = 0;
+        for (const p of all) charge = Math.max(charge, p.charge ?? 0);
+        if (charge > 0.02) {
+          ctx.beginPath();
+          ctx.arc(ball.x, ball.y, Math.max(1, BALL_R * charge), 0, Math.PI * 2);
+          ctx.fillStyle = charge >= 1 ? "#ffd43b" : "rgba(255, 140, 40, 0.75)";
+          ctx.fill();
+          if (charge >= 1) {
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, BALL_R + 3 + Math.sin(now / 90) * 2, 0, Math.PI * 2);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = "#ffd43b";
+            ctx.stroke();
+          }
+        }
+      }
+
+      // Particles (goal explosions / power-kick burst)
+      for (const pt of particles) {
+        const a = Math.max(0, pt.life / pt.maxLife);
+        ctx.globalAlpha = a;
+        if (pt.ring) {
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2);
+          ctx.lineWidth = 5;
+          ctx.strokeStyle = pt.color;
+          ctx.stroke();
+        } else if (pt.emoji) {
+          ctx.font = `${pt.size}px sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(pt.emoji, pt.x, pt.y);
+        } else {
+          ctx.fillStyle = pt.color;
+          ctx.fillRect(pt.x - pt.size / 2, pt.y - pt.size / 2, pt.size, pt.size);
+        }
+        ctx.globalAlpha = 1;
+      }
 
       // Countdown overlay
       if (countdown > 0 && !ended) {
@@ -876,6 +1071,25 @@ function EggballPage() {
 
   const showMenu = !joined || menuOpen;
 
+  const buyItem = (id: string, price: number) => {
+    setShop((prev) => {
+      if (prev.owned.includes(id) || prev.money < price) return prev;
+      const next = { ...prev, money: prev.money - price, owned: [...prev.owned, id] };
+      shopRef.current = next;
+      saveShop(next);
+      return next;
+    });
+  };
+
+  const equipItem = (kind: "skin" | "explosion", id: string) => {
+    setShop((prev) => {
+      const next = { ...prev, [kind]: id } as ShopState;
+      shopRef.current = next;
+      saveShop(next);
+      return next;
+    });
+  };
+
   return (
     <div className="h-screen w-screen bg-neutral-900 text-white flex flex-col items-center overflow-hidden">
       <div className="flex items-center gap-6 text-2xl font-bold py-2 shrink-0">
@@ -890,6 +1104,15 @@ function EggballPage() {
             Teams
           </button>
         )}
+        {joined && (
+          <button
+            onClick={() => setShopOpen(true)}
+            className="px-3 py-1 rounded-md bg-yellow-500 hover:bg-yellow-400 text-black text-sm font-bold"
+          >
+            Shop
+          </button>
+        )}
+        <span className="text-sm font-bold text-yellow-400">${shop.money}</span>
       </div>
       <div
         className="relative"
@@ -904,7 +1127,15 @@ function EggballPage() {
           height={CANVAS_H}
           style={{ width: "100%", height: "100%", display: "block", borderRadius: 8 }}
         />
-        {showMenu && (
+        {shopOpen && (
+          <ShopPanel
+            shop={shop}
+            onBuy={buyItem}
+            onEquip={equipItem}
+            onClose={() => setShopOpen(false)}
+          />
+        )}
+        {showMenu && !shopOpen && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/70 rounded-lg">
             <div className="bg-neutral-800 rounded-xl p-8 shadow-2xl text-center max-w-sm">
               <h1 className="text-3xl font-bold mb-2">Eggball</h1>
