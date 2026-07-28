@@ -533,6 +533,20 @@ function EggballPage() {
 
         // Kick input — direction is from player center toward ball (contact point),
         // so where you hit the ball determines where it goes (like Eggball/Beatball).
+        // Power-kick charge: builds while we're touching the ball, resets the
+        // instant contact is lost.
+        {
+          const cdx = ball.x - me.x;
+          const cdy = ball.y - me.y;
+          const cd = Math.hypot(cdx, cdy);
+          if (cd < PLAYER_R + BALL_R + 2) {
+            myCharge = Math.min(1, myCharge + dt / CHARGE_TIME);
+          } else {
+            myCharge = 0;
+          }
+          me.charge = myCharge;
+        }
+
         if ((keys.has("x") || keys.has(" ")) && me.kickUntil < now) {
           me.kickUntil = now + KICK_DURATION * 1000;
           const bdx = ball.x - me.x;
@@ -541,9 +555,23 @@ function EggballPage() {
           if (bd > 0 && bd < PLAYER_R + BALL_R + KICK_REACH) {
             const nx = bdx / bd;
             const ny = bdy / bd;
-            const nvx = nx * KICK_POWER;
-            const nvy = ny * KICK_POWER;
-            sfxKick();
+            const powered = myCharge >= 1;
+            const power = KICK_POWER * (powered ? POWER_MULT : 1);
+            const nvx = nx * power;
+            const nvy = ny * power;
+            if (powered) {
+              sfxPower();
+              for (let i = 0; i < 18; i++) {
+                const a = Math.atan2(ny, nx) + (Math.random() - 0.5) * 1.2;
+                const sp = 80 + Math.random() * 200;
+                particles.push({ x: ball.x, y: ball.y, vx: -Math.cos(a) * sp, vy: -Math.sin(a) * sp, life: 0.45, maxLife: 0.45, color: "#ffe066", size: 3 + Math.random() * 3 });
+              }
+              particles.push({ x: ball.x, y: ball.y, vx: 0, vy: 0, life: 0.4, maxLife: 0.4, color: "#ffe066", ring: true, size: 8 });
+            } else {
+              sfxKick();
+            }
+            myCharge = 0;
+            me.charge = 0;
             if (hostId === myId) {
               ball.vx = nvx;
               ball.vy = nvy;
@@ -769,6 +797,23 @@ function EggballPage() {
           lastSeen.delete(id);
         }
       }
+
+      // Goal explosion + rewards (runs on every client from replicated state)
+      if (celebrate > 0 && prevCelebrate <= 0) {
+        const scorer = celebrateId === myId ? getMyPlayer() : players.get(celebrateId);
+        spawnExplosion(ball.x, ball.y, scorer?.explosion);
+        if (celebrateId === myId) addMoneyRef.current(GOAL_REWARD);
+      }
+      prevCelebrate = celebrate;
+
+      if (ended && !prevEnded) {
+        if (teamRef.current && joinedRef.current && winner === teamRef.current) {
+          addMoneyRef.current(WIN_REWARD);
+        }
+      }
+      prevEnded = ended;
+
+      updateParticles(dt);
 
       draw();
       requestAnimationFrame(tick);
