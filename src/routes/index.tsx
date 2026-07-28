@@ -20,8 +20,8 @@ const FIELD_H = 720;
 const PAD = 70; // padded canvas area around the field so goals + out-of-bounds are visible
 const CANVAS_W = FIELD_W + PAD * 2;
 const CANVAS_H = FIELD_H + PAD * 2;
-const PLAYER_R = 20;
-const BALL_R = 14;
+const PLAYER_R = 24;
+const BALL_R = 17;
 const GOAL_H = 220;
 const GOAL_DEPTH = 46;
 const POST_R = 8;
@@ -67,6 +67,8 @@ interface GameState {
   winner: Team | "draw";
   hostId: string;
   intermission: number; // seconds remaining before next game starts (0 = not in intermission)
+  celebrate: number; // seconds remaining of the goal-celebration camera
+  celebrateId: string; // player id the camera zooms on
 }
 
 
@@ -138,8 +140,14 @@ function EggballPage() {
     let ended = false;
     let winner: Team | "draw" = null as Team | "draw";
     let intermission = 0; // seconds
+    // Host is elected from presence (lowest id). Until presence syncs we host
+    // ourselves only if nobody else claims it — see presence sync below.
     let hostId = myId;
+    let presenceSynced = false;
     let ballKickedAt = 0;
+    let celebrate = 0;
+    let celebrateId = "";
+    let lastTouchId = "";
     const knownIds = new Set<string>([myId]);
 
 
@@ -168,7 +176,7 @@ function EggballPage() {
       lastSeen.delete(payload.id);
       knownIds.delete(payload.id);
     });
-    channel.on("broadcast", { event: "kick" }, ({ payload }: { payload: { bx: number; by: number; bvx: number; bvy: number } }) => {
+    channel.on("broadcast", { event: "kick" }, ({ payload }: { payload: { bx: number; by: number; bvx: number; bvy: number; id?: string } }) => {
       // Only host authoritative on ball, but any client can announce a kick they applied.
       // Only the host will process kicks; others get ball via 'state'.
       if (hostId === myId) {
@@ -177,10 +185,18 @@ function EggballPage() {
         ball.vx = payload.bvx;
         ball.vy = payload.bvy;
         ballKickedAt = performance.now();
+        if (payload.id) lastTouchId = payload.id;
       }
+    });
+    // Someone just joined and is asking everyone to re-announce themselves.
+    channel.on("broadcast", { event: "hello" }, () => {
+      const me = getMyPlayer();
+      if (me) channel.send({ type: "broadcast", event: "player", payload: { ...me } });
     });
     channel.on("broadcast", { event: "state" }, ({ payload }: { payload: GameState }) => {
       if (payload.hostId === myId) return; // ignore our own would-be echoes
+      // Lowest id wins host election; ignore state from a higher-id would-be host.
+      if (hostId === myId && myId < payload.hostId) return;
       ball = payload.ball;
       scoreRed = payload.scoreRed;
       scoreBlue = payload.scoreBlue;
@@ -189,6 +205,8 @@ function EggballPage() {
       ended = payload.ended;
       winner = payload.winner;
       intermission = payload.intermission ?? 0;
+      celebrate = payload.celebrate ?? 0;
+      celebrateId = payload.celebrateId ?? "";
       hostId = payload.hostId;
       setScore({ red: scoreRed, blue: scoreBlue, timeLeft, countdown, ended, winner, intermission });
     });
@@ -198,19 +216,35 @@ function EggballPage() {
       const ids = new Set<string>();
       Object.values(state).forEach((arr) => arr.forEach((p) => ids.add(p.id)));
       ids.add(myId);
+      presenceSynced = true;
       // Determine host = lowest id
       const sorted = Array.from(ids).sort();
       hostId = sorted[0];
-      // Clean players not present
+      // Only drop players that presence says are gone AND we haven't heard from
+      // recently — presence can lag behind broadcasts on a fresh join.
+      const now = performance.now();
       for (const id of Array.from(players.keys())) {
-        if (!ids.has(id)) players.delete(id);
+        if (id === myId) continue;
+        const seen = lastSeen.get(id) ?? 0;
+        if (!ids.has(id) && now - seen > 3000) {
+          players.delete(id);
+          lastSeen.delete(id);
+        }
       }
+    });
+    channel.on("presence", { event: "join" }, () => {
+      // Re-announce ourselves so the newcomer sees us immediately.
+      const me = getMyPlayer();
+      if (me) channel.send({ type: "broadcast", event: "player", payload: { ...me } });
     });
 
     channel.subscribe(async (status) => {
       if (status === "SUBSCRIBED") {
         await channel.track({ id: myId });
         setConnected(true);
+        // Ask everyone already in the room to announce themselves.
+        channel.send({ type: "broadcast", event: "hello", payload: { id: myId } });
+        setTimeout(() => channel.send({ type: "broadcast", event: "hello", payload: { id: myId } }), 800);
       }
     });
 
