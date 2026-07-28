@@ -573,13 +573,28 @@ function EggballPage() {
             ball.y += ny * overlap;
 
             if (!recentlyKicked) {
-              // Ball simply adopts the player's push velocity along the contact
-              // normal, and nothing else. If the player stops, the ball stops.
-              // If the player moves sideways, the ball is left behind (no
-              // sticking, no drift, no slingshot, no 360s).
-              const playerAlong = Math.max(0, p.vx * nx + p.vy * ny);
-              ball.vx = nx * playerAlong;
-              ball.vy = ny * playerAlong;
+              // Dribble: the ball rolls out mostly in the direction the player is
+              // RUNNING (blended slightly with the contact normal), at the speed
+              // of the push. Off-centre contacts nudge it a little sideways
+              // instead of squirting it away, and it stops when the player stops.
+              const pspeed = Math.hypot(p.vx, p.vy);
+              const along = p.vx * nx + p.vy * ny;
+              if (pspeed > 1 && along > 0) {
+                const vhx = p.vx / pspeed;
+                const vhy = p.vy / pspeed;
+                let rx = nx * 0.25 + vhx * 0.75;
+                let ry = ny * 0.25 + vhy * 0.75;
+                const rl = Math.hypot(rx, ry) || 1;
+                rx /= rl;
+                ry /= rl;
+                const speed = along * 0.95;
+                ball.vx = rx * speed;
+                ball.vy = ry * speed;
+                lastTouchId = p.id;
+              } else {
+                ball.vx = 0;
+                ball.vy = 0;
+              }
             }
 
             // Pinch detection: another player pressing into the ball from the opposite side,
@@ -617,7 +632,18 @@ function EggballPage() {
           ended = true;
           winner = scoreRed > scoreBlue ? "red" : "blue";
           intermission = 10;
+          celebrate = 0;
+          celebrateId = "";
         }
+      }
+
+      // Goal scored: freeze the ball and run a short celebration camera on the
+      // scorer before the 3-2-1 restart. Players can still run around.
+      function startCelebration() {
+        celebrate = 2.6;
+        celebrateId = lastTouchId;
+        ball.vx = 0;
+        ball.vy = 0;
       }
 
 
