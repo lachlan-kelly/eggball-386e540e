@@ -20,8 +20,8 @@ const FIELD_H = 720;
 const PAD = 70; // padded canvas area around the field so goals + out-of-bounds are visible
 const CANVAS_W = FIELD_W + PAD * 2;
 const CANVAS_H = FIELD_H + PAD * 2;
-const PLAYER_R = 20;
-const BALL_R = 14;
+const PLAYER_R = 24;
+const BALL_R = 17;
 const GOAL_H = 220;
 const GOAL_DEPTH = 46;
 const POST_R = 8;
@@ -67,6 +67,8 @@ interface GameState {
   winner: Team | "draw";
   hostId: string;
   intermission: number; // seconds remaining before next game starts (0 = not in intermission)
+  celebrate: number; // seconds remaining of the goal-celebration camera
+  celebrateId: string; // player id the camera zooms on
 }
 
 
@@ -138,8 +140,17 @@ function EggballPage() {
     let ended = false;
     let winner: Team | "draw" = null as Team | "draw";
     let intermission = 0; // seconds
+    // Host is elected from presence (lowest id). Until presence syncs we host
+    // ourselves only if nobody else claims it — see presence sync below.
     let hostId = myId;
+    let presenceSynced = false;
     let ballKickedAt = 0;
+    let celebrate = 0;
+    let celebrateId = "";
+    let lastTouchId = "";
+    let camZoom = 1;
+    let camX = CANVAS_W / 2;
+    let camY = CANVAS_H / 2;
     const knownIds = new Set<string>([myId]);
 
 
@@ -168,7 +179,7 @@ function EggballPage() {
       lastSeen.delete(payload.id);
       knownIds.delete(payload.id);
     });
-    channel.on("broadcast", { event: "kick" }, ({ payload }: { payload: { bx: number; by: number; bvx: number; bvy: number } }) => {
+    channel.on("broadcast", { event: "kick" }, ({ payload }: { payload: { bx: number; by: number; bvx: number; bvy: number; id?: string } }) => {
       // Only host authoritative on ball, but any client can announce a kick they applied.
       // Only the host will process kicks; others get ball via 'state'.
       if (hostId === myId) {
@@ -177,10 +188,18 @@ function EggballPage() {
         ball.vx = payload.bvx;
         ball.vy = payload.bvy;
         ballKickedAt = performance.now();
+        if (payload.id) lastTouchId = payload.id;
       }
+    });
+    // Someone just joined and is asking everyone to re-announce themselves.
+    channel.on("broadcast", { event: "hello" }, () => {
+      const me = getMyPlayer();
+      if (me) channel.send({ type: "broadcast", event: "player", payload: { ...me } });
     });
     channel.on("broadcast", { event: "state" }, ({ payload }: { payload: GameState }) => {
       if (payload.hostId === myId) return; // ignore our own would-be echoes
+      // Lowest id wins host election; ignore state from a higher-id would-be host.
+      if (hostId === myId && myId < payload.hostId) return;
       ball = payload.ball;
       scoreRed = payload.scoreRed;
       scoreBlue = payload.scoreBlue;
@@ -189,6 +208,8 @@ function EggballPage() {
       ended = payload.ended;
       winner = payload.winner;
       intermission = payload.intermission ?? 0;
+      celebrate = payload.celebrate ?? 0;
+      celebrateId = payload.celebrateId ?? "";
       hostId = payload.hostId;
       setScore({ red: scoreRed, blue: scoreBlue, timeLeft, countdown, ended, winner, intermission });
     });
@@ -198,19 +219,35 @@ function EggballPage() {
       const ids = new Set<string>();
       Object.values(state).forEach((arr) => arr.forEach((p) => ids.add(p.id)));
       ids.add(myId);
+      presenceSynced = true;
       // Determine host = lowest id
       const sorted = Array.from(ids).sort();
       hostId = sorted[0];
-      // Clean players not present
+      // Only drop players that presence says are gone AND we haven't heard from
+      // recently — presence can lag behind broadcasts on a fresh join.
+      const now = performance.now();
       for (const id of Array.from(players.keys())) {
-        if (!ids.has(id)) players.delete(id);
+        if (id === myId) continue;
+        const seen = lastSeen.get(id) ?? 0;
+        if (!ids.has(id) && now - seen > 3000) {
+          players.delete(id);
+          lastSeen.delete(id);
+        }
       }
+    });
+    channel.on("presence", { event: "join" }, () => {
+      // Re-announce ourselves so the newcomer sees us immediately.
+      const me = getMyPlayer();
+      if (me) channel.send({ type: "broadcast", event: "player", payload: { ...me } });
     });
 
     channel.subscribe(async (status) => {
       if (status === "SUBSCRIBED") {
         await channel.track({ id: myId });
         setConnected(true);
+        // Ask everyone already in the room to announce themselves.
+        channel.send({ type: "broadcast", event: "hello", payload: { id: myId } });
+        setTimeout(() => channel.send({ type: "broadcast", event: "hello", payload: { id: myId } }), 800);
       }
     });
 
@@ -289,6 +326,15 @@ function EggballPage() {
               intermission = 0;
               resetPositions();
             }
+          }
+        } else if (celebrate > 0) {
+          // Goal celebration camera: clock paused, players free to run around.
+          celebrate = Math.max(0, celebrate - dt);
+          if (celebrate <= 0) {
+            celebrate = 0;
+            celebrateId = "";
+            countdown = 3;
+            resetPositions();
           }
         } else {
           if (countdown > 0) {
@@ -418,15 +464,16 @@ function EggballPage() {
               ball.vx = nvx;
               ball.vy = nvy;
               ballKickedAt = now;
+              lastTouchId = myId;
             } else {
-              channel.send({ type: "broadcast", event: "kick", payload: { bx: ball.x, by: ball.y, bvx: nvx, bvy: nvy } });
+              channel.send({ type: "broadcast", event: "kick", payload: { bx: ball.x, by: ball.y, bvx: nvx, bvy: nvy, id: myId } });
             }
           }
         }
       }
 
       // Host-only: ball physics
-      if (hostId === myId && countdown <= 0 && !ended) {
+      if (hostId === myId && countdown <= 0 && !ended && celebrate <= 0) {
         // Apply friction
         ball.vx *= Math.pow(BALL_FRICTION, dt * 60);
         ball.vy *= Math.pow(BALL_FRICTION, dt * 60);
@@ -446,9 +493,8 @@ function EggballPage() {
           scoreBlue += 1;
           sfxGoal();
           goalCooldown = 3;
-          countdown = 3;
+          startCelebration();
           checkEnd();
-          resetPositions();
         } else if (!inGoalY && ball.x - BALL_R < 0) {
           ball.x = BALL_R;
           ball.vx = -ball.vx * 0.7;
@@ -457,9 +503,8 @@ function EggballPage() {
           scoreRed += 1;
           sfxGoal();
           goalCooldown = 3;
-          countdown = 3;
+          startCelebration();
           checkEnd();
-          resetPositions();
         } else if (!inGoalY && ball.x + BALL_R > FIELD_W) {
           ball.x = FIELD_W - BALL_R;
           ball.vx = -ball.vx * 0.7;
@@ -531,13 +576,28 @@ function EggballPage() {
             ball.y += ny * overlap;
 
             if (!recentlyKicked) {
-              // Ball simply adopts the player's push velocity along the contact
-              // normal, and nothing else. If the player stops, the ball stops.
-              // If the player moves sideways, the ball is left behind (no
-              // sticking, no drift, no slingshot, no 360s).
-              const playerAlong = Math.max(0, p.vx * nx + p.vy * ny);
-              ball.vx = nx * playerAlong;
-              ball.vy = ny * playerAlong;
+              // Dribble: the ball rolls out mostly in the direction the player is
+              // RUNNING (blended slightly with the contact normal), at the speed
+              // of the push. Off-centre contacts nudge it a little sideways
+              // instead of squirting it away, and it stops when the player stops.
+              const pspeed = Math.hypot(p.vx, p.vy);
+              const along = p.vx * nx + p.vy * ny;
+              if (pspeed > 1 && along > 0) {
+                const vhx = p.vx / pspeed;
+                const vhy = p.vy / pspeed;
+                let rx = nx * 0.25 + vhx * 0.75;
+                let ry = ny * 0.25 + vhy * 0.75;
+                const rl = Math.hypot(rx, ry) || 1;
+                rx /= rl;
+                ry /= rl;
+                const speed = along * 0.95;
+                ball.vx = rx * speed;
+                ball.vy = ry * speed;
+                lastTouchId = p.id;
+              } else {
+                ball.vx = 0;
+                ball.vy = 0;
+              }
             }
 
             // Pinch detection: another player pressing into the ball from the opposite side,
@@ -575,7 +635,18 @@ function EggballPage() {
           ended = true;
           winner = scoreRed > scoreBlue ? "red" : "blue";
           intermission = 10;
+          celebrate = 0;
+          celebrateId = "";
         }
+      }
+
+      // Goal scored: freeze the ball and run a short celebration camera on the
+      // scorer before the 3-2-1 restart. Players can still run around.
+      function startCelebration() {
+        celebrate = 2.6;
+        celebrateId = lastTouchId;
+        ball.vx = 0;
+        ball.vy = 0;
       }
 
 
@@ -599,6 +670,8 @@ function EggballPage() {
           winner,
           hostId,
           intermission,
+          celebrate,
+          celebrateId,
         };
         channel.send({ type: "broadcast", event: "state", payload: state });
         setScore({ red: scoreRed, blue: scoreBlue, timeLeft, countdown, ended, winner, intermission });
@@ -626,7 +699,19 @@ function EggballPage() {
       ctx.fillStyle = "#0f172a";
       ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
+      // Goal-celebration camera: smoothly zoom in on the scorer, then back out.
+      const camTarget = celebrate > 0 && celebrateId ? players.get(celebrateId) : undefined;
+      const wantZoom = camTarget ? 2.3 : 1;
+      const focusX = camTarget ? camTarget.x + PAD : CANVAS_W / 2;
+      const focusY = camTarget ? camTarget.y + PAD : CANVAS_H / 2;
+      camZoom += (wantZoom - camZoom) * 0.08;
+      camX += (focusX - camX) * 0.12;
+      camY += (focusY - camY) * 0.12;
+
       ctx.save();
+      ctx.translate(CANVAS_W / 2, CANVAS_H / 2);
+      ctx.scale(camZoom, camZoom);
+      ctx.translate(-camX, -camY);
       ctx.translate(PAD, PAD);
 
       // Field background
@@ -739,9 +824,32 @@ function EggballPage() {
         }
       }
 
-
       ctx.restore();
+
+      // GOAL! banner drawn in screen space (unaffected by the zoom camera)
+      if (celebrate > 0) {
+        const scorer = celebrateId ? players.get(celebrateId) : undefined;
+        ctx.save();
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.font = "bold 90px sans-serif";
+        ctx.lineWidth = 8;
+        ctx.strokeStyle = "rgba(0,0,0,0.7)";
+        ctx.strokeText("GOAL!", CANVAS_W / 2, 90);
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText("GOAL!", CANVAS_W / 2, 90);
+        if (scorer) {
+          ctx.font = "bold 40px sans-serif";
+          ctx.lineWidth = 6;
+          ctx.strokeStyle = "rgba(0,0,0,0.7)";
+          ctx.strokeText(scorer.name, CANVAS_W / 2, 155);
+          ctx.fillStyle = scorer.team === "red" ? "#ff6b6b" : "#6ea8ff";
+          ctx.fillText(scorer.name, CANVAS_W / 2, 155);
+        }
+        ctx.restore();
+      }
     }
+
 
     requestAnimationFrame(tick);
 
