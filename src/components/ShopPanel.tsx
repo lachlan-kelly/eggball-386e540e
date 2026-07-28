@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { EXPLOSIONS, SKINS, type ShopState, type SkinItem, type ExplosionItem } from "@/lib/shop";
 
 type Section = "skins" | "explosions" | "abilities";
@@ -141,5 +142,3 @@ export function ShopPanel({
     </div>
   );
 }
-
-import { useState } from "react";
