@@ -824,9 +824,32 @@ function EggballPage() {
         }
       }
 
-
       ctx.restore();
+
+      // GOAL! banner drawn in screen space (unaffected by the zoom camera)
+      if (celebrate > 0) {
+        const scorer = celebrateId ? players.get(celebrateId) : undefined;
+        ctx.save();
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.font = "bold 90px sans-serif";
+        ctx.lineWidth = 8;
+        ctx.strokeStyle = "rgba(0,0,0,0.7)";
+        ctx.strokeText("GOAL!", CANVAS_W / 2, 90);
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText("GOAL!", CANVAS_W / 2, 90);
+        if (scorer) {
+          ctx.font = "bold 40px sans-serif";
+          ctx.lineWidth = 6;
+          ctx.strokeStyle = "rgba(0,0,0,0.7)";
+          ctx.strokeText(scorer.name, CANVAS_W / 2, 155);
+          ctx.fillStyle = scorer.team === "red" ? "#ff6b6b" : "#6ea8ff";
+          ctx.fillText(scorer.name, CANVAS_W / 2, 155);
+        }
+        ctx.restore();
+      }
     }
+
 
     requestAnimationFrame(tick);
 
