@@ -667,6 +667,8 @@ function EggballPage() {
           winner,
           hostId,
           intermission,
+          celebrate,
+          celebrateId,
         };
         channel.send({ type: "broadcast", event: "state", payload: state });
         setScore({ red: scoreRed, blue: scoreBlue, timeLeft, countdown, ended, winner, intermission });
