@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { ShopPanel } from "@/components/ShopPanel";
+import { GOAL_REWARD, WIN_REWARD, getExplosion, getSkin, loadShop, saveShop, DEFAULT_SHOP, type ShopState } from "@/lib/shop";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -34,6 +36,8 @@ const KICK_REACH = 10; // extra px beyond touching to still land a kick
 const GAME_LENGTH = 5 * 60; // seconds
 const MERCY_LEAD = 5;
 const CANVAS_ASPECT = CANVAS_W / CANVAS_H;
+const CHARGE_TIME = 1.4; // seconds of ball contact to fully charge a power kick
+const POWER_MULT = 1.75;
 
 type Team = "red" | "blue" | null;
 
@@ -48,6 +52,9 @@ interface PlayerState {
   lastDirX: number;
   lastDirY: number;
   name: string;
+  skin?: string;
+  explosion?: string;
+  charge?: number; // 0..1 power-kick charge
 }
 
 interface BallState {
@@ -82,6 +89,8 @@ function EggballPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [connected, setConnected] = useState(false);
   const [nameInput, setNameInput] = useState("");
+  const [shopOpen, setShopOpen] = useState(false);
+  const [shop, setShop] = useState<ShopState>(DEFAULT_SHOP);
   const [score, setScore] = useState({ red: 0, blue: 0, timeLeft: GAME_LENGTH, countdown: 0, ended: false, winner: null as Team | "draw", intermission: 0 });
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -89,6 +98,27 @@ function EggballPage() {
   const teamRef = useRef<Team>(null);
   const joinedRef = useRef(false);
   const nameRef = useRef<string>("");
+  const shopRef = useRef<ShopState>(DEFAULT_SHOP);
+  const addMoneyRef = useRef<(n: number) => void>(() => {});
+
+  useEffect(() => {
+    const loaded = loadShop();
+    shopRef.current = loaded;
+    setShop(loaded);
+  }, []);
+  useEffect(() => {
+    shopRef.current = shop;
+  }, [shop]);
+  useEffect(() => {
+    addMoneyRef.current = (n: number) => {
+      setShop((prev) => {
+        const next = { ...prev, money: prev.money + n };
+        shopRef.current = next;
+        saveShop(next);
+        return next;
+      });
+    };
+  }, []);
 
   useEffect(() => {
     teamRef.current = team;
@@ -127,6 +157,7 @@ function EggballPage() {
   const sfxGoal = () => { playTone(660, 0.15, "sawtooth", 0.2, 880); setTimeout(() => playTone(880, 0.25, "sawtooth", 0.2, 1320), 120); };
   const sfxWhistle = () => playTone(1400, 0.35, "triangle", 0.15, 1800);
   const sfxPost = () => playTone(180, 0.06, "square", 0.15);
+  const sfxPower = () => { playTone(160, 0.22, "sawtooth", 0.22, 60); playTone(520, 0.18, "square", 0.14, 90); };
 
   useEffect(() => {
     const myId = myIdRef.current;
@@ -152,6 +183,54 @@ function EggballPage() {
     let camX = CANVAS_W / 2;
     let camY = CANVAS_H / 2;
     const knownIds = new Set<string>([myId]);
+    let myCharge = 0;
+    let prevCelebrate = 0;
+    let prevEnded = false;
+    type Particle = { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; color: string; emoji?: string; ring?: boolean; size: number };
+    let particles: Particle[] = [];
+
+    function spawnExplosion(x: number, y: number, explosionId?: string) {
+      const ex = getExplosion(explosionId);
+      if (ex.kind === "emoji") {
+        for (let i = 0; i < 22; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const sp = 120 + Math.random() * 320;
+          particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 120, life: 1.4, maxLife: 1.4, color: "#fff", emoji: ex.emojis![i % ex.emojis!.length], size: 20 + Math.random() * 16 });
+        }
+      } else if (ex.kind === "confetti") {
+        for (let i = 0; i < 60; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const sp = 100 + Math.random() * 420;
+          particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 160, life: 1.6, maxLife: 1.6, color: ex.colors![i % ex.colors!.length], size: 4 + Math.random() * 5 });
+        }
+      } else if (ex.kind === "firework") {
+        for (let burst = 0; burst < 3; burst++) {
+          for (let i = 0; i < 26; i++) {
+            const a = (i / 26) * Math.PI * 2;
+            const sp = 200 + burst * 90;
+            particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1.1 + burst * 0.2, maxLife: 1.1 + burst * 0.2, color: ex.colors![burst % ex.colors!.length], size: 4 });
+          }
+        }
+      }
+      // Every explosion gets a shockwave ring
+      const ringColor = ex.colors?.[0] ?? "#ffffff";
+      particles.push({ x, y, vx: 0, vy: 0, life: 0.7, maxLife: 0.7, color: ringColor, ring: true, size: 10 });
+    }
+
+    function updateParticles(dt: number) {
+      for (const p of particles) {
+        if (p.ring) {
+          p.size += 420 * dt;
+        } else {
+          p.vy += 520 * dt;
+          p.vx *= 0.99;
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+        }
+        p.life -= dt;
+      }
+      particles = particles.filter((p) => p.life > 0);
+    }
 
 
     const keys = new Set<string>();
@@ -296,11 +375,16 @@ function EggballPage() {
           lastDirX: t === "red" ? 1 : -1,
           lastDirY: 0,
           name: nameRef.current || `Player ${players.size + 1}`,
+          skin: shopRef.current.skin,
+          explosion: shopRef.current.explosion,
+          charge: 0,
         };
         players.set(myId, me);
       }
       if (me.team !== t) me.team = t;
       if (nameRef.current && me.name !== nameRef.current) me.name = nameRef.current;
+      me.skin = shopRef.current.skin;
+      me.explosion = shopRef.current.explosion;
       return me;
     }
 
