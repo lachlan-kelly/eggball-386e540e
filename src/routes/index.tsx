@@ -696,7 +696,19 @@ function EggballPage() {
       ctx.fillStyle = "#0f172a";
       ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
+      // Goal-celebration camera: smoothly zoom in on the scorer, then back out.
+      const camTarget = celebrate > 0 && celebrateId ? players.get(celebrateId) : undefined;
+      const wantZoom = camTarget ? 2.3 : 1;
+      const focusX = camTarget ? camTarget.x + PAD : CANVAS_W / 2;
+      const focusY = camTarget ? camTarget.y + PAD : CANVAS_H / 2;
+      camZoom += (wantZoom - camZoom) * 0.08;
+      camX += (focusX - camX) * 0.12;
+      camY += (focusY - camY) * 0.12;
+
       ctx.save();
+      ctx.translate(CANVAS_W / 2, CANVAS_H / 2);
+      ctx.scale(camZoom, camZoom);
+      ctx.translate(-camX, -camY);
       ctx.translate(PAD, PAD);
 
       // Field background
