@@ -148,6 +148,9 @@ function EggballPage() {
     let celebrate = 0;
     let celebrateId = "";
     let lastTouchId = "";
+    let camZoom = 1;
+    let camX = CANVAS_W / 2;
+    let camY = CANVAS_H / 2;
     const knownIds = new Set<string>([myId]);
 
 
