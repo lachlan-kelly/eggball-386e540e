@@ -461,15 +461,16 @@ function EggballPage() {
               ball.vx = nvx;
               ball.vy = nvy;
               ballKickedAt = now;
+              lastTouchId = myId;
             } else {
-              channel.send({ type: "broadcast", event: "kick", payload: { bx: ball.x, by: ball.y, bvx: nvx, bvy: nvy } });
+              channel.send({ type: "broadcast", event: "kick", payload: { bx: ball.x, by: ball.y, bvx: nvx, bvy: nvy, id: myId } });
             }
           }
         }
       }
 
       // Host-only: ball physics
-      if (hostId === myId && countdown <= 0 && !ended) {
+      if (hostId === myId && countdown <= 0 && !ended && celebrate <= 0) {
         // Apply friction
         ball.vx *= Math.pow(BALL_FRICTION, dt * 60);
         ball.vy *= Math.pow(BALL_FRICTION, dt * 60);
@@ -489,9 +490,8 @@ function EggballPage() {
           scoreBlue += 1;
           sfxGoal();
           goalCooldown = 3;
-          countdown = 3;
+          startCelebration();
           checkEnd();
-          resetPositions();
         } else if (!inGoalY && ball.x - BALL_R < 0) {
           ball.x = BALL_R;
           ball.vx = -ball.vx * 0.7;
@@ -500,9 +500,8 @@ function EggballPage() {
           scoreRed += 1;
           sfxGoal();
           goalCooldown = 3;
-          countdown = 3;
+          startCelebration();
           checkEnd();
-          resetPositions();
         } else if (!inGoalY && ball.x + BALL_R > FIELD_W) {
           ball.x = FIELD_W - BALL_R;
           ball.vx = -ball.vx * 0.7;
