@@ -51,10 +51,11 @@ export function ShopPanel({
 }: {
   shop: ShopState;
   onBuy: (id: string, price: number) => void;
-  onEquip: (kind: "skin" | "explosion", id: string) => void;
+  onEquip: (kind: EquipKind, id: string) => void;
   onClose: () => void;
 }) {
   const [section, setSection] = useState<Section>("skins");
+
 
   const rows =
     section === "skins"
