@@ -208,6 +208,13 @@ function EggballPage() {
     let myCharge = 0;
     let prevCelebrate = 0;
     let prevEnded = false;
+    // Ability state (local player only)
+    const cooldownUntil: Record<"q" | "e", number> = { q: 0, e: 0 };
+    const cooldownLen: Record<"q" | "e", number> = { q: 1, e: 1 };
+    let dashDirX = 0;
+    let dashDirY = 0;
+    let lastAbilityUi = 0;
+
     type Particle = { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; color: string; emoji?: string; ring?: boolean; size: number };
     let particles: Particle[] = [];
 
