@@ -407,6 +407,11 @@ function EggballPage() {
           skin: shopRef.current.skin,
           explosion: shopRef.current.explosion,
           charge: 0,
+          abilityQ: shopRef.current.abilityQ,
+          abilityE: shopRef.current.abilityE,
+          magnetUntil: 0,
+          curlUntil: 0,
+          dashUntil: 0,
         };
         players.set(myId, me);
       }
@@ -414,8 +419,11 @@ function EggballPage() {
       if (nameRef.current && me.name !== nameRef.current) me.name = nameRef.current;
       me.skin = shopRef.current.skin;
       me.explosion = shopRef.current.explosion;
+      me.abilityQ = shopRef.current.abilityQ;
+      me.abilityE = shopRef.current.abilityE;
       return me;
     }
+
 
     function tick() {
       if (!running) return;
