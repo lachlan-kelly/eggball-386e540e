@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { ShopPanel } from "@/components/ShopPanel";
-import { GOAL_REWARD, WIN_REWARD, getExplosion, getSkin, loadShop, saveShop, DEFAULT_SHOP, type ShopState } from "@/lib/shop";
+import { ABILITIES, GOAL_REWARD, WIN_REWARD, getAbility, getExplosion, getSkin, loadShop, saveShop, DEFAULT_SHOP, type EquipKind, type ShopState } from "@/lib/shop";
 
 export const Route = createFileRoute("/")({
   head: () => ({
