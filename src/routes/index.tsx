@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { ShopPanel } from "@/components/ShopPanel";
-import { GOAL_REWARD, WIN_REWARD, getExplosion, getSkin, loadShop, saveShop, DEFAULT_SHOP, type ShopState } from "@/lib/shop";
+import { ABILITIES, GOAL_REWARD, WIN_REWARD, getAbility, getExplosion, getSkin, loadShop, saveShop, DEFAULT_SHOP, type EquipKind, type ShopState } from "@/lib/shop";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -37,7 +37,15 @@ const GAME_LENGTH = 5 * 60; // seconds
 const MERCY_LEAD = 5;
 const CANVAS_ASPECT = CANVAS_W / CANVAS_H;
 const CHARGE_TIME = 1.4; // seconds of ball contact to fully charge a power kick
-const POWER_MULT = 1.75;
+const POWER_MULT = 2.5;
+// Abilities
+const DASH_SPEED = 640;
+const DASH_TIME = 0.18;
+const MAGNET_RANGE = 380;
+const MAGNET_TIME = 1.0;
+const MAGNET_ACCEL = 2000;
+const CURL_WINDOW = 5; // seconds to land the curled kick
+const CURL_RATE = 3.6; // rad/sec of velocity rotation at full spin
 
 type Team = "red" | "blue" | null;
 
@@ -55,6 +63,11 @@ interface PlayerState {
   skin?: string;
   explosion?: string;
   charge?: number; // 0..1 power-kick charge
+  abilityQ?: string;
+  abilityE?: string;
+  magnetUntil?: number; // timestamp ms while the magnet is pulling
+  curlUntil?: number; // timestamp ms while curl is armed
+  dashUntil?: number; // timestamp ms while dashing
 }
 
 interface BallState {
@@ -62,7 +75,9 @@ interface BallState {
   y: number;
   vx: number;
   vy: number;
+  spin?: number; // curl: rad/sec applied to the velocity direction
 }
+
 
 interface GameState {
   ball: BallState;
@@ -92,6 +107,8 @@ function EggballPage() {
   const [shopOpen, setShopOpen] = useState(false);
   const [shop, setShop] = useState<ShopState>(DEFAULT_SHOP);
   const [score, setScore] = useState({ red: 0, blue: 0, timeLeft: GAME_LENGTH, countdown: 0, ended: false, winner: null as Team | "draw", intermission: 0 });
+  // 0..1 readiness of each ability slot (1 = ready), plus armed state for Curl
+  const [abilityUi, setAbilityUi] = useState({ q: 1, e: 1, qArmed: false, eArmed: false });
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const myIdRef = useRef<string>(makeId());
@@ -105,7 +122,12 @@ function EggballPage() {
     const loaded = loadShop();
     shopRef.current = loaded;
     setShop(loaded);
+    if (loaded.name) {
+      setNameInput(loaded.name);
+      nameRef.current = loaded.name;
+    }
   }, []);
+
   useEffect(() => {
     shopRef.current = shop;
   }, [shop]);
@@ -186,6 +208,16 @@ function EggballPage() {
     let myCharge = 0;
     let prevCelebrate = 0;
     let prevEnded = false;
+    // Ability state (local player only)
+    const cooldownUntil: Record<"q" | "e", number> = { q: 0, e: 0 };
+    const cooldownLen: Record<"q" | "e", number> = { q: 1, e: 1 };
+    let dashDirX = 0;
+    let dashDirY = 0;
+    let lastAbilityUi = 0;
+    let prevQ = false;
+    let prevE = false;
+
+
     type Particle = { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; color: string; emoji?: string; ring?: boolean; size: number };
     let particles: Particle[] = [];
 
@@ -258,7 +290,7 @@ function EggballPage() {
       lastSeen.delete(payload.id);
       knownIds.delete(payload.id);
     });
-    channel.on("broadcast", { event: "kick" }, ({ payload }: { payload: { bx: number; by: number; bvx: number; bvy: number; id?: string } }) => {
+    channel.on("broadcast", { event: "kick" }, ({ payload }: { payload: { bx: number; by: number; bvx: number; bvy: number; id?: string; spin?: number } }) => {
       // Only host authoritative on ball, but any client can announce a kick they applied.
       // Only the host will process kicks; others get ball via 'state'.
       if (hostId === myId) {
@@ -266,10 +298,12 @@ function EggballPage() {
         ball.y = payload.by;
         ball.vx = payload.bvx;
         ball.vy = payload.bvy;
+        ball.spin = payload.spin ?? 0;
         ballKickedAt = performance.now();
         if (payload.id) lastTouchId = payload.id;
       }
     });
+
     // Someone just joined and is asking everyone to re-announce themselves.
     channel.on("broadcast", { event: "hello" }, () => {
       const me = getMyPlayer();
@@ -378,6 +412,11 @@ function EggballPage() {
           skin: shopRef.current.skin,
           explosion: shopRef.current.explosion,
           charge: 0,
+          abilityQ: shopRef.current.abilityQ,
+          abilityE: shopRef.current.abilityE,
+          magnetUntil: 0,
+          curlUntil: 0,
+          dashUntil: 0,
         };
         players.set(myId, me);
       }
@@ -385,8 +424,11 @@ function EggballPage() {
       if (nameRef.current && me.name !== nameRef.current) me.name = nameRef.current;
       me.skin = shopRef.current.skin;
       me.explosion = shopRef.current.explosion;
+      me.abilityQ = shopRef.current.abilityQ;
+      me.abilityE = shopRef.current.abilityE;
       return me;
     }
+
 
     function tick() {
       if (!running) return;
@@ -454,9 +496,46 @@ function EggballPage() {
           me.lastDirX = ix;
           me.lastDirY = iy;
         }
-        // Target velocity
-        let tvx = ix * PLAYER_SPEED;
-        let tvy = iy * PLAYER_SPEED;
+
+        // ---- Abilities (Q / E) ----
+        {
+          const tryAbility = (slot: "q" | "e") => {
+            const id = slot === "q" ? shopRef.current.abilityQ : shopRef.current.abilityE;
+            const ab = getAbility(id);
+            if (!ab || now < cooldownUntil[slot]) return;
+            if (ab.id === "dash") {
+              const dx = len > 0 ? ix : me.lastDirX;
+              const dy = len > 0 ? iy : me.lastDirY;
+              const dl = Math.hypot(dx, dy) || 1;
+              dashDirX = dx / dl;
+              dashDirY = dy / dl;
+              me.dashUntil = now + DASH_TIME * 1000;
+              playTone(240, 0.12, "sawtooth", 0.16, 700);
+            } else if (ab.id === "magnet") {
+              const d = Math.hypot(ball.x - me.x, ball.y - me.y);
+              if (d > MAGNET_RANGE) return; // out of range: no cooldown burned
+              me.magnetUntil = now + MAGNET_TIME * 1000;
+              playTone(180, 0.25, "triangle", 0.12, 520);
+            } else if (ab.id === "curl") {
+              me.curlUntil = now + CURL_WINDOW * 1000;
+              playTone(520, 0.18, "triangle", 0.12, 900);
+            }
+            cooldownUntil[slot] = now + ab.cooldown * 1000;
+            cooldownLen[slot] = ab.cooldown * 1000;
+          };
+          const qDown = keys.has("q");
+          const eDown = keys.has("e");
+          if (qDown && !prevQ) tryAbility("q");
+          if (eDown && !prevE) tryAbility("e");
+          prevQ = qDown;
+          prevE = eDown;
+        }
+
+        // Target velocity (dash overrides speed along the dash direction)
+        const dashing = (me.dashUntil ?? 0) > now;
+        let tvx = dashing ? dashDirX * DASH_SPEED : ix * PLAYER_SPEED;
+        let tvy = dashing ? dashDirY * DASH_SPEED : iy * PLAYER_SPEED;
+
 
         // If touching another player, slowdown factor based on pushing against them
         for (const other of players.values()) {
@@ -559,6 +638,21 @@ function EggballPage() {
             const power = KICK_POWER * (powered ? POWER_MULT : 1);
             const nvx = nx * power;
             const nvy = ny * power;
+            // Curl: if armed, bend the shot toward the direction we're running.
+            let spin = 0;
+            if ((me.curlUntil ?? 0) > now) {
+              const mdx = me.lastDirX;
+              const mdy = me.lastDirY;
+              const cross = nx * mdy - ny * mdx; // >0 = curl clockwise
+              const sign = cross === 0 ? 1 : Math.sign(cross);
+              spin = sign * CURL_RATE * (0.55 + Math.min(1, Math.abs(cross)) * 0.45);
+              me.curlUntil = 0;
+              playTone(760, 0.25, "sine", 0.14, 380);
+              for (let i = 0; i < 14; i++) {
+                const a = Math.random() * Math.PI * 2;
+                particles.push({ x: ball.x, y: ball.y, vx: Math.cos(a) * 120, vy: Math.sin(a) * 120, life: 0.4, maxLife: 0.4, color: "#7dd3fc", size: 3 });
+              }
+            }
             if (powered) {
               sfxPower();
               for (let i = 0; i < 18; i++) {
@@ -575,10 +669,11 @@ function EggballPage() {
             if (hostId === myId) {
               ball.vx = nvx;
               ball.vy = nvy;
+              ball.spin = spin;
               ballKickedAt = now;
               lastTouchId = myId;
             } else {
-              channel.send({ type: "broadcast", event: "kick", payload: { bx: ball.x, by: ball.y, bvx: nvx, bvy: nvy, id: myId } });
+              channel.send({ type: "broadcast", event: "kick", payload: { bx: ball.x, by: ball.y, bvx: nvx, bvy: nvy, id: myId, spin } });
             }
           }
         }
@@ -586,6 +681,35 @@ function EggballPage() {
 
       // Host-only: ball physics
       if (hostId === myId && countdown <= 0 && !ended && celebrate <= 0) {
+        // Magnet: any player with an active magnet drags the ball toward them.
+        for (const p of players.values()) {
+          if (!p.magnetUntil || p.magnetUntil < now) continue;
+          const dx = p.x - ball.x;
+          const dy = p.y - ball.y;
+          const d = Math.hypot(dx, dy);
+          if (d < PLAYER_R + BALL_R + 2) {
+            ball.vx = 0;
+            ball.vy = 0;
+            p.magnetUntil = 0;
+            continue;
+          }
+          if (d > MAGNET_RANGE + 60) continue;
+          ball.vx += (dx / d) * MAGNET_ACCEL * dt;
+          ball.vy += (dy / d) * MAGNET_ACCEL * dt;
+          ball.spin = 0;
+          lastTouchId = p.id;
+        }
+
+        // Curl spin: rotate the velocity vector, decaying over ~1s
+        if (ball.spin) {
+          const ang = Math.atan2(ball.vy, ball.vx) + ball.spin * dt;
+          const sp2 = Math.hypot(ball.vx, ball.vy);
+          ball.vx = Math.cos(ang) * sp2;
+          ball.vy = Math.sin(ang) * sp2;
+          ball.spin *= Math.pow(0.975, dt * 60);
+          if (Math.abs(ball.spin) < 0.05) ball.spin = 0;
+        }
+
         // Apply friction
         ball.vx *= Math.pow(BALL_FRICTION, dt * 60);
         ball.vy *= Math.pow(BALL_FRICTION, dt * 60);
@@ -597,6 +721,7 @@ function EggballPage() {
         }
         ball.x += ball.vx * dt;
         ball.y += ball.vy * dt;
+
 
         // Wall collision - but goal openings on left/right.
         // A goal only counts when the WHOLE ball is past the goal line.
@@ -762,6 +887,24 @@ function EggballPage() {
       }
 
 
+      // Ability HUD (throttled to ~15Hz)
+      if (now - lastAbilityUi > 66) {
+        lastAbilityUi = now;
+        const frac = (slot: "q" | "e") => {
+          const left = cooldownUntil[slot] - now;
+          if (left <= 0) return 1;
+          return Math.max(0, Math.min(1, 1 - left / cooldownLen[slot]));
+        };
+        const armed = (me?.curlUntil ?? 0) > now;
+        setAbilityUi({
+          q: frac("q"),
+          e: frac("e"),
+          qArmed: armed && shopRef.current.abilityQ === "curl",
+          eArmed: armed && shopRef.current.abilityE === "curl",
+        });
+      }
+
+
       // Broadcast my player state ~20Hz
       if (me && now - lastBroadcast > 50) {
         lastBroadcast = now;
@@ -916,17 +1059,20 @@ function EggballPage() {
           }
         }
         ctx.restore();
-        // Team ring so teams stay readable with any skin
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, PLAYER_R - 3, 0, Math.PI * 2);
-        ctx.lineWidth = 4;
-        ctx.strokeStyle = teamColor;
-        ctx.stroke();
+        // Curl armed: subtle spinning aura
+        if ((p.curlUntil ?? 0) > now) {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, PLAYER_R + 6 + Math.sin(now / 120) * 2, 0, Math.PI * 2);
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = "rgba(125,211,252,0.85)";
+          ctx.stroke();
+        }
         ctx.beginPath();
         ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI * 2);
         ctx.lineWidth = 3;
         ctx.strokeStyle = kicking ? "#ffffff" : "#000000";
         ctx.stroke();
+
         // Name tag
         if (p.name) {
           const raw = p.name;
@@ -941,7 +1087,35 @@ function EggballPage() {
           ctx.fillText(display, p.x, p.y + PLAYER_R + 4);
         }
       }
+      // Magnet beam: crackling line from the ball to each magnetising player
+      for (const p of all) {
+        if ((p.magnetUntil ?? 0) <= now) continue;
+        ctx.save();
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = "rgba(147,197,253,0.9)";
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        const segs = 8;
+        for (let i = 1; i <= segs; i++) {
+          const t = i / segs;
+          const jitter = i === segs ? 0 : (Math.random() - 0.5) * 14;
+          const bx = p.x + (ball.x - p.x) * t;
+          const by = p.y + (ball.y - p.y) * t;
+          const nx = -(ball.y - p.y);
+          const ny = ball.x - p.x;
+          const nl = Math.hypot(nx, ny) || 1;
+          ctx.lineTo(bx + (nx / nl) * jitter, by + (ny / nl) * jitter);
+        }
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, BALL_R + 7, 0, Math.PI * 2);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "rgba(147,197,253,0.7)";
+        ctx.stroke();
+        ctx.restore();
+      }
       // Ball
+
       ctx.beginPath();
       ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
       ctx.fillStyle = "white";
@@ -1064,6 +1238,12 @@ function EggballPage() {
     const trimmed = nameInput.trim().slice(0, 12);
     const finalName = trimmed || `Player ${Math.floor(Math.random() * 999) + 1}`;
     nameRef.current = finalName;
+    setShop((prev) => {
+      const next = { ...prev, name: finalName };
+      shopRef.current = next;
+      saveShop(next);
+      return next;
+    });
     setTeam(t);
     setJoined(true);
     setMenuOpen(false);
@@ -1081,16 +1261,57 @@ function EggballPage() {
     });
   };
 
-  const equipItem = (kind: "skin" | "explosion", id: string) => {
+  const equipItem = (kind: EquipKind, id: string) => {
     setShop((prev) => {
-      const next = { ...prev, [kind]: id } as ShopState;
+      let next = { ...prev, [kind]: id } as ShopState;
+      // Don't allow the same ability in both slots — swap instead.
+      if (kind === "abilityQ" && next.abilityE === id) next = { ...next, abilityE: prev.abilityQ };
+      if (kind === "abilityE" && next.abilityQ === id) next = { ...next, abilityQ: prev.abilityE };
       shopRef.current = next;
       saveShop(next);
       return next;
     });
   };
 
+  const AbilityDial = ({ slot, id, frac, armed }: { slot: string; id: string; frac: number; armed: boolean }) => {
+    const ability = ABILITIES.find((a) => a.id === id);
+    if (!ability) return null;
+    const R = 26;
+    const C = 2 * Math.PI * R;
+    const ready = frac >= 1;
+    return (
+      <div className="relative h-16 w-16">
+        <svg viewBox="0 0 64 64" className="absolute inset-0 -rotate-90">
+          <circle cx="32" cy="32" r={R} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="5" />
+          <circle
+            cx="32"
+            cy="32"
+            r={R}
+            fill="none"
+            stroke={armed ? "#7dd3fc" : ready ? "#facc15" : "#94a3b8"}
+            strokeWidth="5"
+            strokeLinecap="round"
+            strokeDasharray={C}
+            strokeDashoffset={C * (1 - frac)}
+          />
+        </svg>
+        <div
+          className={`absolute inset-[9px] rounded-full flex items-center justify-center text-xl ${
+            ready ? "bg-neutral-800" : "bg-neutral-900/80 opacity-50"
+          }`}
+          title={`${ability.name} — ${ability.description}`}
+        >
+          {ability.icon}
+        </div>
+        <span className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-neutral-700 text-[11px] font-bold flex items-center justify-center">
+          {slot}
+        </span>
+      </div>
+    );
+  };
+
   return (
+
     <div className="h-screen w-screen bg-neutral-900 text-white flex flex-col items-center overflow-hidden">
       <div className="flex items-center gap-6 text-2xl font-bold py-2 shrink-0">
         <span className="text-red-400">RED {score.red}</span>
@@ -1127,6 +1348,13 @@ function EggballPage() {
           height={CANVAS_H}
           style={{ width: "100%", height: "100%", display: "block", borderRadius: 8 }}
         />
+        {joined && !shopOpen && !showMenu && (
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-4">
+            <AbilityDial slot="Q" id={shop.abilityQ} frac={abilityUi.q} armed={abilityUi.qArmed} />
+            <AbilityDial slot="E" id={shop.abilityE} frac={abilityUi.e} armed={abilityUi.eArmed} />
+          </div>
+        )}
+
         {shopOpen && (
           <ShopPanel
             shop={shop}

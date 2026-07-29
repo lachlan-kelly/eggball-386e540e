@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { EXPLOSIONS, SKINS, type ShopState, type SkinItem, type ExplosionItem } from "@/lib/shop";
+import { ABILITIES, EXPLOSIONS, SKINS, type EquipKind, type ShopState, type SkinItem, type ExplosionItem } from "@/lib/shop";
 
 type Section = "skins" | "explosions" | "abilities";
+
 
 function SkinPreview({ skin }: { skin: SkinItem }) {
   const base = skin.color || "#e23c3c";
@@ -50,10 +51,11 @@ export function ShopPanel({
 }: {
   shop: ShopState;
   onBuy: (id: string, price: number) => void;
-  onEquip: (kind: "skin" | "explosion", id: string) => void;
+  onEquip: (kind: EquipKind, id: string) => void;
   onClose: () => void;
 }) {
   const [section, setSection] = useState<Section>("skins");
+
 
   const rows =
     section === "skins"
@@ -99,9 +101,51 @@ export function ShopPanel({
         {/* Content */}
         <div className="flex-1 p-5 overflow-y-auto">
           {section === "abilities" ? (
-            <div className="h-full flex items-center justify-center text-neutral-500 text-sm">
-              Abilities coming soon.
+            <div className="flex flex-col gap-3">
+              <p className="text-xs text-neutral-500">
+                Equip one ability to <b>Q</b> and one to <b>E</b>. Free during testing.
+              </p>
+              {ABILITIES.map((a) => {
+                const onQ = shop.abilityQ === a.id;
+                const onE = shop.abilityE === a.id;
+                return (
+                  <div key={a.id} className="flex items-center gap-3 bg-neutral-900/60 rounded-lg p-3">
+                    <div className="h-12 w-12 rounded-full bg-neutral-800 border-2 border-neutral-600 flex items-center justify-center text-xl shrink-0">
+                      {a.icon}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-sm">
+                        {a.name}{" "}
+                        <span className="text-neutral-500 font-normal">· {a.cooldown}s cooldown</span>
+                      </p>
+                      <p className="text-xs text-neutral-400">{a.description}</p>
+                      <p className="text-[11px] text-yellow-500/80">
+                        Free (normally ${a.listPrice})
+                      </p>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <button
+                        onClick={() => onEquip("abilityQ", a.id)}
+                        className={`px-3 py-1.5 rounded-md text-xs font-bold ${
+                          onQ ? "bg-green-500 text-black" : "bg-neutral-700 hover:bg-neutral-600"
+                        }`}
+                      >
+                        Q
+                      </button>
+                      <button
+                        onClick={() => onEquip("abilityE", a.id)}
+                        className={`px-3 py-1.5 rounded-md text-xs font-bold ${
+                          onE ? "bg-green-500 text-black" : "bg-neutral-700 hover:bg-neutral-600"
+                        }`}
+                      >
+                        E
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
+
           ) : (
             <div className="grid grid-cols-2 gap-3">
               {rows.map((r) => {
