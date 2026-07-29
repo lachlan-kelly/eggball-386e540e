@@ -290,7 +290,7 @@ function EggballPage() {
       lastSeen.delete(payload.id);
       knownIds.delete(payload.id);
     });
-    channel.on("broadcast", { event: "kick" }, ({ payload }: { payload: { bx: number; by: number; bvx: number; bvy: number; id?: string } }) => {
+    channel.on("broadcast", { event: "kick" }, ({ payload }: { payload: { bx: number; by: number; bvx: number; bvy: number; id?: string; spin?: number } }) => {
       // Only host authoritative on ball, but any client can announce a kick they applied.
       // Only the host will process kicks; others get ball via 'state'.
       if (hostId === myId) {
@@ -298,10 +298,12 @@ function EggballPage() {
         ball.y = payload.by;
         ball.vx = payload.bvx;
         ball.vy = payload.bvy;
+        ball.spin = payload.spin ?? 0;
         ballKickedAt = performance.now();
         if (payload.id) lastTouchId = payload.id;
       }
     });
+
     // Someone just joined and is asking everyone to re-announce themselves.
     channel.on("broadcast", { event: "hello" }, () => {
       const me = getMyPlayer();
