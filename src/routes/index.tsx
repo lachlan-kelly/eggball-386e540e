@@ -1087,7 +1087,35 @@ function EggballPage() {
           ctx.fillText(display, p.x, p.y + PLAYER_R + 4);
         }
       }
+      // Magnet beam: crackling line from the ball to each magnetising player
+      for (const p of all) {
+        if ((p.magnetUntil ?? 0) <= now) continue;
+        ctx.save();
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = "rgba(147,197,253,0.9)";
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        const segs = 8;
+        for (let i = 1; i <= segs; i++) {
+          const t = i / segs;
+          const jitter = i === segs ? 0 : (Math.random() - 0.5) * 14;
+          const bx = p.x + (ball.x - p.x) * t;
+          const by = p.y + (ball.y - p.y) * t;
+          const nx = -(ball.y - p.y);
+          const ny = ball.x - p.x;
+          const nl = Math.hypot(nx, ny) || 1;
+          ctx.lineTo(bx + (nx / nl) * jitter, by + (ny / nl) * jitter);
+        }
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, BALL_R + 7, 0, Math.PI * 2);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "rgba(147,197,253,0.7)";
+        ctx.stroke();
+        ctx.restore();
+      }
       // Ball
+
       ctx.beginPath();
       ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
       ctx.fillStyle = "white";
