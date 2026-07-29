@@ -37,7 +37,15 @@ const GAME_LENGTH = 5 * 60; // seconds
 const MERCY_LEAD = 5;
 const CANVAS_ASPECT = CANVAS_W / CANVAS_H;
 const CHARGE_TIME = 1.4; // seconds of ball contact to fully charge a power kick
-const POWER_MULT = 1.75;
+const POWER_MULT = 2.5;
+// Abilities
+const DASH_SPEED = 640;
+const DASH_TIME = 0.18;
+const MAGNET_RANGE = 380;
+const MAGNET_TIME = 1.0;
+const MAGNET_ACCEL = 2000;
+const CURL_WINDOW = 5; // seconds to land the curled kick
+const CURL_RATE = 3.6; // rad/sec of velocity rotation at full spin
 
 type Team = "red" | "blue" | null;
 
@@ -55,6 +63,11 @@ interface PlayerState {
   skin?: string;
   explosion?: string;
   charge?: number; // 0..1 power-kick charge
+  abilityQ?: string;
+  abilityE?: string;
+  magnetUntil?: number; // timestamp ms while the magnet is pulling
+  curlUntil?: number; // timestamp ms while curl is armed
+  dashUntil?: number; // timestamp ms while dashing
 }
 
 interface BallState {
@@ -62,7 +75,9 @@ interface BallState {
   y: number;
   vx: number;
   vy: number;
+  spin?: number; // curl: rad/sec applied to the velocity direction
 }
+
 
 interface GameState {
   ball: BallState;
