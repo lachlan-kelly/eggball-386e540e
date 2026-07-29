@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { EXPLOSIONS, SKINS, type ShopState, type SkinItem, type ExplosionItem } from "@/lib/shop";
+import { ABILITIES, EXPLOSIONS, SKINS, type EquipKind, type ShopState, type SkinItem, type ExplosionItem } from "@/lib/shop";
 
 type Section = "skins" | "explosions" | "abilities";
+
 
 function SkinPreview({ skin }: { skin: SkinItem }) {
   const base = skin.color || "#e23c3c";
