@@ -1273,8 +1273,45 @@ function EggballPage() {
     });
   };
 
+  const AbilityDial = ({ slot, id, frac, armed }: { slot: string; id: string; frac: number; armed: boolean }) => {
+    const ability = ABILITIES.find((a) => a.id === id);
+    if (!ability) return null;
+    const R = 26;
+    const C = 2 * Math.PI * R;
+    const ready = frac >= 1;
+    return (
+      <div className="relative h-16 w-16">
+        <svg viewBox="0 0 64 64" className="absolute inset-0 -rotate-90">
+          <circle cx="32" cy="32" r={R} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="5" />
+          <circle
+            cx="32"
+            cy="32"
+            r={R}
+            fill="none"
+            stroke={armed ? "#7dd3fc" : ready ? "#facc15" : "#94a3b8"}
+            strokeWidth="5"
+            strokeLinecap="round"
+            strokeDasharray={C}
+            strokeDashoffset={C * (1 - frac)}
+          />
+        </svg>
+        <div
+          className={`absolute inset-[9px] rounded-full flex items-center justify-center text-xl ${
+            ready ? "bg-neutral-800" : "bg-neutral-900/80 opacity-50"
+          }`}
+          title={`${ability.name} — ${ability.description}`}
+        >
+          {ability.icon}
+        </div>
+        <span className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-neutral-700 text-[11px] font-bold flex items-center justify-center">
+          {slot}
+        </span>
+      </div>
+    );
+  };
 
   return (
+
     <div className="h-screen w-screen bg-neutral-900 text-white flex flex-col items-center overflow-hidden">
       <div className="flex items-center gap-6 text-2xl font-bold py-2 shrink-0">
         <span className="text-red-400">RED {score.red}</span>
