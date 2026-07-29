@@ -1348,6 +1348,13 @@ function EggballPage() {
           height={CANVAS_H}
           style={{ width: "100%", height: "100%", display: "block", borderRadius: 8 }}
         />
+        {joined && !shopOpen && !showMenu && (
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-4">
+            <AbilityDial slot="Q" id={shop.abilityQ} frac={abilityUi.q} armed={abilityUi.qArmed} />
+            <AbilityDial slot="E" id={shop.abilityE} frac={abilityUi.e} armed={abilityUi.eArmed} />
+          </div>
+        )}
+
         {shopOpen && (
           <ShopPanel
             shop={shop}
