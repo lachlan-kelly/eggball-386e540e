@@ -1059,17 +1059,20 @@ function EggballPage() {
           }
         }
         ctx.restore();
-        // Team ring so teams stay readable with any skin
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, PLAYER_R - 3, 0, Math.PI * 2);
-        ctx.lineWidth = 4;
-        ctx.strokeStyle = teamColor;
-        ctx.stroke();
+        // Curl armed: subtle spinning aura
+        if ((p.curlUntil ?? 0) > now) {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, PLAYER_R + 6 + Math.sin(now / 120) * 2, 0, Math.PI * 2);
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = "rgba(125,211,252,0.85)";
+          ctx.stroke();
+        }
         ctx.beginPath();
         ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI * 2);
         ctx.lineWidth = 3;
         ctx.strokeStyle = kicking ? "#ffffff" : "#000000";
         ctx.stroke();
+
         // Name tag
         if (p.name) {
           const raw = p.name;
