@@ -887,6 +887,24 @@ function EggballPage() {
       }
 
 
+      // Ability HUD (throttled to ~15Hz)
+      if (now - lastAbilityUi > 66) {
+        lastAbilityUi = now;
+        const frac = (slot: "q" | "e") => {
+          const left = cooldownUntil[slot] - now;
+          if (left <= 0) return 1;
+          return Math.max(0, Math.min(1, 1 - left / cooldownLen[slot]));
+        };
+        const armed = (me?.curlUntil ?? 0) > now;
+        setAbilityUi({
+          q: frac("q"),
+          e: frac("e"),
+          qArmed: armed && shopRef.current.abilityQ === "curl",
+          eArmed: armed && shopRef.current.abilityE === "curl",
+        });
+      }
+
+
       // Broadcast my player state ~20Hz
       if (me && now - lastBroadcast > 50) {
         lastBroadcast = now;
