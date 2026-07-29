@@ -107,6 +107,8 @@ function EggballPage() {
   const [shopOpen, setShopOpen] = useState(false);
   const [shop, setShop] = useState<ShopState>(DEFAULT_SHOP);
   const [score, setScore] = useState({ red: 0, blue: 0, timeLeft: GAME_LENGTH, countdown: 0, ended: false, winner: null as Team | "draw", intermission: 0 });
+  // 0..1 readiness of each ability slot (1 = ready), plus armed state for Curl
+  const [abilityUi, setAbilityUi] = useState({ q: 1, e: 1, qArmed: false, eArmed: false });
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const myIdRef = useRef<string>(makeId());
@@ -120,7 +122,12 @@ function EggballPage() {
     const loaded = loadShop();
     shopRef.current = loaded;
     setShop(loaded);
+    if (loaded.name) {
+      setNameInput(loaded.name);
+      nameRef.current = loaded.name;
+    }
   }, []);
+
   useEffect(() => {
     shopRef.current = shop;
   }, [shop]);
