@@ -636,6 +636,21 @@ function EggballPage() {
             const power = KICK_POWER * (powered ? POWER_MULT : 1);
             const nvx = nx * power;
             const nvy = ny * power;
+            // Curl: if armed, bend the shot toward the direction we're running.
+            let spin = 0;
+            if ((me.curlUntil ?? 0) > now) {
+              const mdx = me.lastDirX;
+              const mdy = me.lastDirY;
+              const cross = nx * mdy - ny * mdx; // >0 = curl clockwise
+              const sign = cross === 0 ? 1 : Math.sign(cross);
+              spin = sign * CURL_RATE * (0.55 + Math.min(1, Math.abs(cross)) * 0.45);
+              me.curlUntil = 0;
+              playTone(760, 0.25, "sine", 0.14, 380);
+              for (let i = 0; i < 14; i++) {
+                const a = Math.random() * Math.PI * 2;
+                particles.push({ x: ball.x, y: ball.y, vx: Math.cos(a) * 120, vy: Math.sin(a) * 120, life: 0.4, maxLife: 0.4, color: "#7dd3fc", size: 3 });
+              }
+            }
             if (powered) {
               sfxPower();
               for (let i = 0; i < 18; i++) {
@@ -652,10 +667,11 @@ function EggballPage() {
             if (hostId === myId) {
               ball.vx = nvx;
               ball.vy = nvy;
+              ball.spin = spin;
               ballKickedAt = now;
               lastTouchId = myId;
             } else {
-              channel.send({ type: "broadcast", event: "kick", payload: { bx: ball.x, by: ball.y, bvx: nvx, bvy: nvy, id: myId } });
+              channel.send({ type: "broadcast", event: "kick", payload: { bx: ball.x, by: ball.y, bvx: nvx, bvy: nvy, id: myId, spin } });
             }
           }
         }
@@ -663,6 +679,35 @@ function EggballPage() {
 
       // Host-only: ball physics
       if (hostId === myId && countdown <= 0 && !ended && celebrate <= 0) {
+        // Magnet: any player with an active magnet drags the ball toward them.
+        for (const p of players.values()) {
+          if (!p.magnetUntil || p.magnetUntil < now) continue;
+          const dx = p.x - ball.x;
+          const dy = p.y - ball.y;
+          const d = Math.hypot(dx, dy);
+          if (d < PLAYER_R + BALL_R + 2) {
+            ball.vx = 0;
+            ball.vy = 0;
+            p.magnetUntil = 0;
+            continue;
+          }
+          if (d > MAGNET_RANGE + 60) continue;
+          ball.vx += (dx / d) * MAGNET_ACCEL * dt;
+          ball.vy += (dy / d) * MAGNET_ACCEL * dt;
+          ball.spin = 0;
+          lastTouchId = p.id;
+        }
+
+        // Curl spin: rotate the velocity vector, decaying over ~1s
+        if (ball.spin) {
+          const ang = Math.atan2(ball.vy, ball.vx) + ball.spin * dt;
+          const sp2 = Math.hypot(ball.vx, ball.vy);
+          ball.vx = Math.cos(ang) * sp2;
+          ball.vy = Math.sin(ang) * sp2;
+          ball.spin *= Math.pow(0.975, dt * 60);
+          if (Math.abs(ball.spin) < 0.05) ball.spin = 0;
+        }
+
         // Apply friction
         ball.vx *= Math.pow(BALL_FRICTION, dt * 60);
         ball.vy *= Math.pow(BALL_FRICTION, dt * 60);
@@ -674,6 +719,7 @@ function EggballPage() {
         }
         ball.x += ball.vx * dt;
         ball.y += ball.vy * dt;
+
 
         // Wall collision - but goal openings on left/right.
         // A goal only counts when the WHOLE ball is past the goal line.
