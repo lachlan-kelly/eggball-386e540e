@@ -491,9 +491,46 @@ function EggballPage() {
           me.lastDirX = ix;
           me.lastDirY = iy;
         }
-        // Target velocity
-        let tvx = ix * PLAYER_SPEED;
-        let tvy = iy * PLAYER_SPEED;
+
+        // ---- Abilities (Q / E) ----
+        {
+          const tryAbility = (slot: "q" | "e") => {
+            const id = slot === "q" ? shopRef.current.abilityQ : shopRef.current.abilityE;
+            const ab = getAbility(id);
+            if (!ab || now < cooldownUntil[slot]) return;
+            if (ab.id === "dash") {
+              const dx = len > 0 ? ix : me.lastDirX;
+              const dy = len > 0 ? iy : me.lastDirY;
+              const dl = Math.hypot(dx, dy) || 1;
+              dashDirX = dx / dl;
+              dashDirY = dy / dl;
+              me.dashUntil = now + DASH_TIME * 1000;
+              playTone(240, 0.12, "sawtooth", 0.16, 700);
+            } else if (ab.id === "magnet") {
+              const d = Math.hypot(ball.x - me.x, ball.y - me.y);
+              if (d > MAGNET_RANGE) return; // out of range: no cooldown burned
+              me.magnetUntil = now + MAGNET_TIME * 1000;
+              playTone(180, 0.25, "triangle", 0.12, 520);
+            } else if (ab.id === "curl") {
+              me.curlUntil = now + CURL_WINDOW * 1000;
+              playTone(520, 0.18, "triangle", 0.12, 900);
+            }
+            cooldownUntil[slot] = now + ab.cooldown * 1000;
+            cooldownLen[slot] = ab.cooldown * 1000;
+          };
+          const qDown = keys.has("q");
+          const eDown = keys.has("e");
+          if (qDown && !prevQ) tryAbility("q");
+          if (eDown && !prevE) tryAbility("e");
+          prevQ = qDown;
+          prevE = eDown;
+        }
+
+        // Target velocity (dash overrides speed along the dash direction)
+        const dashing = (me.dashUntil ?? 0) > now;
+        let tvx = dashing ? dashDirX * DASH_SPEED : ix * PLAYER_SPEED;
+        let tvy = dashing ? dashDirY * DASH_SPEED : iy * PLAYER_SPEED;
+
 
         // If touching another player, slowdown factor based on pushing against them
         for (const other of players.values()) {
