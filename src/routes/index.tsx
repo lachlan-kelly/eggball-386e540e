@@ -1079,6 +1079,12 @@ function EggballPage() {
     const trimmed = nameInput.trim().slice(0, 12);
     const finalName = trimmed || `Player ${Math.floor(Math.random() * 999) + 1}`;
     nameRef.current = finalName;
+    setShop((prev) => {
+      const next = { ...prev, name: finalName };
+      shopRef.current = next;
+      saveShop(next);
+      return next;
+    });
     setTeam(t);
     setJoined(true);
     setMenuOpen(false);
@@ -1096,14 +1102,18 @@ function EggballPage() {
     });
   };
 
-  const equipItem = (kind: "skin" | "explosion", id: string) => {
+  const equipItem = (kind: EquipKind, id: string) => {
     setShop((prev) => {
-      const next = { ...prev, [kind]: id } as ShopState;
+      let next = { ...prev, [kind]: id } as ShopState;
+      // Don't allow the same ability in both slots — swap instead.
+      if (kind === "abilityQ" && next.abilityE === id) next = { ...next, abilityE: prev.abilityQ };
+      if (kind === "abilityE" && next.abilityQ === id) next = { ...next, abilityQ: prev.abilityE };
       shopRef.current = next;
       saveShop(next);
       return next;
     });
   };
+
 
   return (
     <div className="h-screen w-screen bg-neutral-900 text-white flex flex-col items-center overflow-hidden">
