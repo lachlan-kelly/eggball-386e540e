@@ -214,6 +214,9 @@ function EggballPage() {
     let dashDirX = 0;
     let dashDirY = 0;
     let lastAbilityUi = 0;
+    let prevQ = false;
+    let prevE = false;
+
 
     type Particle = { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; color: string; emoji?: string; ring?: boolean; size: number };
     let particles: Particle[] = [];
