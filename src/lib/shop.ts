@@ -46,20 +46,74 @@ export const EXPLOSIONS: ExplosionItem[] = [
   { id: "shock-gold", name: "Gold Shockwave", price: 500, kind: "shockwave", colors: ["#ffcc33"] },
 ];
 
+export interface AbilityItem {
+  id: string;
+  name: string;
+  /** Actual price charged right now (0 while abilities are free for testing) */
+  price: number;
+  /** Intended price once abilities go live */
+  listPrice: number;
+  icon: string;
+  description: string;
+  cooldown: number; // seconds
+}
+
+export const ABILITIES: AbilityItem[] = [
+  {
+    id: "dash",
+    name: "Dash",
+    price: 0,
+    listPrice: 150,
+    icon: "⚡",
+    description: "Burst forward in the direction you're moving.",
+    cooldown: 5,
+  },
+  {
+    id: "magnet",
+    name: "Magnet",
+    price: 0,
+    listPrice: 600,
+    icon: "🧲",
+    description: "Drag a nearby ball toward you until it reaches your feet.",
+    cooldown: 9,
+  },
+  {
+    id: "curl",
+    name: "Curl",
+    price: 0,
+    listPrice: 350,
+    icon: "🌀",
+    description: "Next kick within 5s bends hard in your running direction.",
+    cooldown: 10,
+  },
+];
+
+export function getAbility(id?: string) {
+  return ABILITIES.find((a) => a.id === id);
+}
+
+export type EquipKind = "skin" | "explosion" | "abilityQ" | "abilityE";
+
 export interface ShopState {
   money: number;
   owned: string[];
   skin: string;
   explosion: string;
+  abilityQ: string;
+  abilityE: string;
+  name: string;
 }
 
 const KEY = "eggball-shop-v1";
 
 export const DEFAULT_SHOP: ShopState = {
   money: 0,
-  owned: ["default", "none"],
+  owned: ["default", "none", ...ABILITIES.map((a) => a.id)],
   skin: "default",
   explosion: "none",
+  abilityQ: "dash",
+  abilityE: "magnet",
+  name: "",
 };
 
 export function loadShop(): ShopState {
@@ -70,9 +124,14 @@ export function loadShop(): ShopState {
     const parsed = JSON.parse(raw) as Partial<ShopState>;
     return {
       money: typeof parsed.money === "number" ? parsed.money : 0,
-      owned: Array.from(new Set([...(parsed.owned ?? []), "default", "none"])),
+      owned: Array.from(
+        new Set([...(parsed.owned ?? []), "default", "none", ...ABILITIES.map((a) => a.id)]),
+      ),
       skin: parsed.skin ?? "default",
       explosion: parsed.explosion ?? "none",
+      abilityQ: parsed.abilityQ ?? "dash",
+      abilityE: parsed.abilityE ?? "magnet",
+      name: typeof parsed.name === "string" ? parsed.name : "",
     };
   } catch {
     return { ...DEFAULT_SHOP };
@@ -95,3 +154,4 @@ export function getSkin(id?: string) {
 export function getExplosion(id?: string) {
   return EXPLOSIONS.find((e) => e.id === id) ?? EXPLOSIONS[0];
 }
+
