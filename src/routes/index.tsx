@@ -136,10 +136,12 @@ function EggballPage() {
   const [connected, setConnected] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [shopOpen, setShopOpen] = useState(false);
+  const [questsOpen, setQuestsOpen] = useState(false);
   const [shop, setShop] = useState<ShopState>(DEFAULT_SHOP);
+  const [quests, setQuests] = useState<QuestState>(defaultQuests);
   const [score, setScore] = useState({ red: 0, blue: 0, timeLeft: GAME_LENGTH, countdown: 0, ended: false, winner: null as Team | "draw", intermission: 0 });
-  // 0..1 readiness of each ability slot (1 = ready), plus armed state for Curl
-  const [abilityUi, setAbilityUi] = useState({ q: 1, e: 1, qArmed: false, eArmed: false });
+  // 0..1 readiness of the equipped ability (1 = ready), plus armed / gamble roll state
+  const [abilityUi, setAbilityUi] = useState({ frac: 1, armed: false, roll: 0 });
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const myIdRef = useRef<string>(makeId());
@@ -147,7 +149,10 @@ function EggballPage() {
   const joinedRef = useRef(false);
   const nameRef = useRef<string>("");
   const shopRef = useRef<ShopState>(DEFAULT_SHOP);
+  const questsRef = useRef<QuestState>(defaultQuests());
   const addMoneyRef = useRef<(n: number) => void>(() => {});
+  const bumpQuestRef = useRef<(m: QuestMetric, n?: number) => void>(() => {});
+  const playAnthemRef = useRef<(a?: AnthemItem) => void>(() => {});
 
   useEffect(() => {
     const loaded = loadShop();
