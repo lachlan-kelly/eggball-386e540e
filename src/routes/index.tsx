@@ -954,20 +954,46 @@ function EggballPage() {
         }
       }
 
-      // Goal explosion + rewards (runs on every client from replicated state)
+      // Goal explosion + anthem + rewards (runs on every client from replicated state)
       if (celebrate > 0 && prevCelebrate <= 0) {
+        lastGoalAt = now;
         const scorer = celebrateId === myId ? getMyPlayer() : players.get(celebrateId);
         spawnExplosion(ball.x, ball.y, scorer?.explosion);
-        if (celebrateId === myId) addMoneyRef.current(GOAL_REWARD);
+        playAnthemRef.current(getAnthem(scorer?.anthem));
+        if (celebrateId === myId) {
+          addMoneyRef.current(GOAL_REWARD);
+          bumpQuestRef.current("goals");
+        }
       }
       prevCelebrate = celebrate;
 
       if (ended && !prevEnded) {
-        if (teamRef.current && joinedRef.current && winner === teamRef.current) {
-          addMoneyRef.current(WIN_REWARD);
+        if (teamRef.current && joinedRef.current) {
+          bumpQuestRef.current("games");
+          if (winner === teamRef.current) {
+            addMoneyRef.current(WIN_REWARD);
+            bumpQuestRef.current("wins");
+          }
         }
       }
       prevEnded = ended;
+
+      // Rewind snapshots (ball + clock + my own position)
+      if (now - lastHistory > HISTORY_STEP) {
+        lastHistory = now;
+        history.push({
+          t: now,
+          bx: ball.x,
+          by: ball.y,
+          bvx: ball.vx,
+          bvy: ball.vy,
+          timeLeft,
+          mx: me?.x ?? 0,
+          my: me?.y ?? 0,
+          hasMe: !!me,
+        });
+        while (history.length && now - history[0].t > 9000) history.shift();
+      }
 
       updateParticles(dt);
 
