@@ -350,6 +350,28 @@ function EggballPage() {
             particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1.1 + burst * 0.2, maxLife: 1.1 + burst * 0.2, color: ex.colors![burst % ex.colors!.length], size: 4 });
           }
         }
+      } else if (ex.kind === "money") {
+        for (let i = 0; i < 34; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const sp = 90 + Math.random() * 300;
+          particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 260, life: 1.8, maxLife: 1.8, color: ex.colors![i % ex.colors!.length], emoji: ex.emojis![i % ex.emojis!.length], size: 18 + Math.random() * 14 });
+        }
+      } else if (ex.kind === "blast") {
+        for (let i = 0; i < 70; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const sp = 150 + Math.random() * 520;
+          particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0.5 + Math.random() * 0.7, maxLife: 1.2, color: ex.colors![i % ex.colors!.length], size: 5 + Math.random() * 9 });
+        }
+        particles.push({ x, y, vx: 0, vy: 0, life: 0.5, maxLife: 0.5, color: "#ff7a1a", ring: true, size: 14 });
+      } else if (ex.kind === "blackhole") {
+        blackhole.until = performance.now() + BLACKHOLE_TIME * 1000;
+        blackhole.x = x;
+        blackhole.y = y;
+        for (let i = 0; i < 40; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const r = 90 + Math.random() * 160;
+          particles.push({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r, vx: -Math.cos(a) * 260, vy: -Math.sin(a) * 260, life: 1.0, maxLife: 1.0, color: ex.colors![i % ex.colors!.length], size: 4 + Math.random() * 4 });
+        }
       }
       // Every explosion gets a shockwave ring
       const ringColor = ex.colors?.[0] ?? "#ffffff";
