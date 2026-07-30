@@ -1053,6 +1053,13 @@ function EggballPage() {
         const kicking = p.kickUntil > now;
         const skin = getSkin(p.skin);
         const teamColor = p.team === "red" ? "#e23c3c" : "#3c6ee2";
+        const glitching = (p.glitchUntil ?? 0) > now;
+        // Outer transform so the Debug glitch can shake / ghost the whole player
+        ctx.save();
+        if (glitching) {
+          ctx.globalAlpha = 0.4 + Math.random() * 0.5;
+          ctx.translate((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14);
+        }
         ctx.save();
         ctx.beginPath();
         ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI * 2);
@@ -1080,6 +1087,25 @@ function EggballPage() {
           ctx.strokeStyle = "rgba(125,211,252,0.85)";
           ctx.stroke();
         }
+        // Gamble loaded: golden dashed ring
+        if ((p.gambleUntil ?? 0) > now) {
+          ctx.save();
+          ctx.setLineDash([6, 6]);
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, PLAYER_R + 9, 0, Math.PI * 2);
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = "rgba(250,204,21,0.9)";
+          ctx.stroke();
+          ctx.restore();
+        }
+        // Dribbling: trailing streak
+        if ((p.dribbleUntil ?? 0) > now) {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, PLAYER_R + 4, 0, Math.PI * 2);
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = "rgba(134,239,172,0.85)";
+          ctx.stroke();
+        }
         ctx.beginPath();
         ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI * 2);
         ctx.lineWidth = 3;
@@ -1099,6 +1125,7 @@ function EggballPage() {
           ctx.fillStyle = p.team === "red" ? "#ff6b6b" : "#6ea8ff";
           ctx.fillText(display, p.x, p.y + PLAYER_R + 4);
         }
+        ctx.restore();
       }
       // Magnet beam: crackling line from the ball to each magnetising player
       for (const p of all) {
