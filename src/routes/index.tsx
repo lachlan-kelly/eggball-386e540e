@@ -318,6 +318,8 @@ function EggballPage() {
     let lastGoalAt = 0;
     let lastHistory = 0;
     const history: Snapshot[] = [];
+    let glitchTeleportAt = 0;
+    let rewindFxUntil = 0;
     // Black hole goal explosion (replicated implicitly: every client spawns it
     // from the same celebration event, and the host applies the pull)
     const blackhole = { until: 0, x: 0, y: 0 };
