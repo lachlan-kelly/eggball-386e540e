@@ -306,14 +306,21 @@ function EggballPage() {
     let myCharge = 0;
     let prevCelebrate = 0;
     let prevEnded = false;
-    // Ability state (local player only)
-    const cooldownUntil: Record<"q" | "e", number> = { q: 0, e: 0 };
-    const cooldownLen: Record<"q" | "e", number> = { q: 1, e: 1 };
+    // Ability state (local player only) — a single equipped ability on Q or E
+    const cooldownUntil = { v: 0 };
+    const cooldownLen = { v: 1 };
     let dashDirX = 0;
     let dashDirY = 0;
     let lastAbilityUi = 0;
     let prevQ = false;
     let prevE = false;
+    let prevCountdown = 0;
+    let lastGoalAt = 0;
+    let lastHistory = 0;
+    const history: Snapshot[] = [];
+    // Black hole goal explosion (replicated implicitly: every client spawns it
+    // from the same celebration event, and the host applies the pull)
+    const blackhole = { until: 0, x: 0, y: 0 };
 
 
     type Particle = { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; color: string; emoji?: string; ring?: boolean; size: number };
