@@ -900,20 +900,26 @@ function EggballPage() {
       }
 
 
+      // Every kickoff (start of a round and after every goal) the ability
+      // starts on full cooldown.
+      if (prevCountdown > 0 && countdown <= 0) {
+        const ab0 = getAbility(shopRef.current.ability);
+        if (ab0) {
+          cooldownUntil.v = now + ab0.cooldown * 1000;
+          cooldownLen.v = ab0.cooldown * 1000;
+        }
+      }
+      prevCountdown = countdown;
+
       // Ability HUD (throttled to ~15Hz)
       if (now - lastAbilityUi > 66) {
         lastAbilityUi = now;
-        const frac = (slot: "q" | "e") => {
-          const left = cooldownUntil[slot] - now;
-          if (left <= 0) return 1;
-          return Math.max(0, Math.min(1, 1 - left / cooldownLen[slot]));
-        };
-        const armed = (me?.curlUntil ?? 0) > now;
+        const left = cooldownUntil.v - now;
+        const frac = left <= 0 ? 1 : Math.max(0, Math.min(1, 1 - left / cooldownLen.v));
         setAbilityUi({
-          q: frac("q"),
-          e: frac("e"),
-          qArmed: armed && shopRef.current.abilityQ === "curl",
-          eArmed: armed && shopRef.current.abilityE === "curl",
+          frac,
+          armed: (me?.curlUntil ?? 0) > now || (me?.gambleUntil ?? 0) > now,
+          roll: (me?.gambleUntil ?? 0) > now ? me?.gambleRoll ?? 0 : 0,
         });
       }
 
