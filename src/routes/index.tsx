@@ -517,8 +517,8 @@ function EggballPage() {
           skin: shopRef.current.skin,
           explosion: shopRef.current.explosion,
           charge: 0,
-          abilityQ: shopRef.current.abilityQ,
-          abilityE: shopRef.current.abilityE,
+          anthem: shopRef.current.anthem,
+          ability: shopRef.current.ability,
           magnetUntil: 0,
           curlUntil: 0,
           dashUntil: 0,
@@ -529,8 +529,8 @@ function EggballPage() {
       if (nameRef.current && me.name !== nameRef.current) me.name = nameRef.current;
       me.skin = shopRef.current.skin;
       me.explosion = shopRef.current.explosion;
-      me.abilityQ = shopRef.current.abilityQ;
-      me.abilityE = shopRef.current.abilityE;
+      me.anthem = shopRef.current.anthem;
+      me.ability = shopRef.current.ability;
       return me;
     }
 
