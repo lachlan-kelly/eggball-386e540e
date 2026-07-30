@@ -2,7 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { ShopPanel } from "@/components/ShopPanel";
-import { ABILITIES, GOAL_REWARD, WIN_REWARD, getAbility, getExplosion, getSkin, loadShop, saveShop, DEFAULT_SHOP, type EquipKind, type ShopState } from "@/lib/shop";
+import { QuestsPanel } from "@/components/QuestsPanel";
+import { ABILITIES, GOAL_REWARD, WIN_REWARD, getAbility, getAnthem, getExplosion, getSkin, loadShop, saveShop, DEFAULT_SHOP, type AnthemItem, type EquipKind, type ShopState } from "@/lib/shop";
+import { addProgress, defaultQuests, loadQuests, refreshQuests, saveQuests, type QuestMetric, type QuestState } from "@/lib/quests";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -41,11 +43,22 @@ const POWER_MULT = 2.5;
 // Abilities
 const DASH_SPEED = 640;
 const DASH_TIME = 0.18;
-const MAGNET_RANGE = 380;
+const MAGNET_RANGE = 230;
 const MAGNET_TIME = 1.0;
 const MAGNET_ACCEL = 2000;
 const CURL_WINDOW = 5; // seconds to land the curled kick
 const CURL_RATE = 3.6; // rad/sec of velocity rotation at full spin
+const CURL_OUT_TIME = 0.34; // seconds bending away from goal before swinging back
+const CURL_LIFE = 1.7; // total seconds the curl acts on the ball
+const DRIBBLE_SPEED = 400;
+const DRIBBLE_TIME = 0.7;
+const GAMBLE_WINDOW = 8; // seconds to use the rolled kick
+const GAMBLE_MAX_MULT = 4.5; // roll of 10 = full-field shot
+const DEBUG_GLITCH = 1.1; // seconds of glitching before the teleport
+const REWIND_SECONDS = 3;
+const HISTORY_STEP = 100; // ms between rewind snapshots
+const BLACKHOLE_TIME = 1.6;
+const BLACKHOLE_PULL = 900;
 
 type Team = "red" | "blue" | null;
 
@@ -62,12 +75,16 @@ interface PlayerState {
   name: string;
   skin?: string;
   explosion?: string;
+  anthem?: string;
   charge?: number; // 0..1 power-kick charge
-  abilityQ?: string;
-  abilityE?: string;
+  ability?: string;
   magnetUntil?: number; // timestamp ms while the magnet is pulling
   curlUntil?: number; // timestamp ms while curl is armed
   dashUntil?: number; // timestamp ms while dashing
+  dribbleUntil?: number; // timestamp ms while dribbling (ball travels with you)
+  gambleUntil?: number; // timestamp ms while a gamble roll is loaded
+  gambleRoll?: number; // 1..10 rolled kick power
+  glitchUntil?: number; // timestamp ms while the Debug glitch plays
 }
 
 interface BallState {
@@ -76,6 +93,20 @@ interface BallState {
   vx: number;
   vy: number;
   spin?: number; // curl: rad/sec applied to the velocity direction
+  curlFlipAt?: number; // timestamp ms when the curl swings back inward
+  curlIn?: number; // sign of the inward (goal-bound) curl
+}
+
+interface Snapshot {
+  t: number;
+  bx: number;
+  by: number;
+  bvx: number;
+  bvy: number;
+  timeLeft: number;
+  mx: number;
+  my: number;
+  hasMe: boolean;
 }
 
 
@@ -105,10 +136,12 @@ function EggballPage() {
   const [connected, setConnected] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [shopOpen, setShopOpen] = useState(false);
+  const [questsOpen, setQuestsOpen] = useState(false);
   const [shop, setShop] = useState<ShopState>(DEFAULT_SHOP);
+  const [quests, setQuests] = useState<QuestState>(defaultQuests);
   const [score, setScore] = useState({ red: 0, blue: 0, timeLeft: GAME_LENGTH, countdown: 0, ended: false, winner: null as Team | "draw", intermission: 0 });
-  // 0..1 readiness of each ability slot (1 = ready), plus armed state for Curl
-  const [abilityUi, setAbilityUi] = useState({ q: 1, e: 1, qArmed: false, eArmed: false });
+  // 0..1 readiness of the equipped ability (1 = ready), plus armed / gamble roll state
+  const [abilityUi, setAbilityUi] = useState({ frac: 1, armed: false, roll: 0 });
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const myIdRef = useRef<string>(makeId());
@@ -116,7 +149,10 @@ function EggballPage() {
   const joinedRef = useRef(false);
   const nameRef = useRef<string>("");
   const shopRef = useRef<ShopState>(DEFAULT_SHOP);
+  const questsRef = useRef<QuestState>(defaultQuests());
   const addMoneyRef = useRef<(n: number) => void>(() => {});
+  const bumpQuestRef = useRef<(m: QuestMetric, n?: number) => void>(() => {});
+  const playAnthemRef = useRef<(a?: AnthemItem) => void>(() => {});
 
   useEffect(() => {
     const loaded = loadShop();
@@ -137,6 +173,34 @@ function EggballPage() {
         const next = { ...prev, money: prev.money + n };
         shopRef.current = next;
         saveShop(next);
+        return next;
+      });
+    };
+  }, []);
+
+  // Quests: load, keep fresh, and expose a progress bumper to the game loop
+  useEffect(() => {
+    const fresh = refreshQuests(loadQuests());
+    questsRef.current = fresh;
+    setQuests(fresh);
+    saveQuests(fresh);
+    const iv = window.setInterval(() => {
+      setQuests((prev) => {
+        const next = refreshQuests(prev);
+        if (next === prev) return prev;
+        questsRef.current = next;
+        saveQuests(next);
+        return next;
+      });
+    }, 30000);
+    return () => window.clearInterval(iv);
+  }, []);
+  useEffect(() => {
+    bumpQuestRef.current = (metric: QuestMetric, amount = 1) => {
+      setQuests((prev) => {
+        const next = addProgress(prev, metric, amount);
+        questsRef.current = next;
+        saveQuests(next);
         return next;
       });
     };
@@ -180,6 +244,40 @@ function EggballPage() {
   const sfxWhistle = () => playTone(1400, 0.35, "triangle", 0.15, 1800);
   const sfxPost = () => playTone(180, 0.06, "square", 0.15);
   const sfxPower = () => { playTone(160, 0.22, "sawtooth", 0.22, 60); playTone(520, 0.18, "square", 0.14, 90); };
+  const sfxAbility = () => playTone(700, 0.12, "triangle", 0.14, 1200);
+  const sfxRewind = () => playTone(900, 0.5, "sine", 0.16, 180);
+
+  // Goal anthems: play an uploaded audio file when the item has one, otherwise
+  // synthesize the item's melody.
+  const anthemAudioRef = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => {
+    playAnthemRef.current = (a?: AnthemItem) => {
+      try {
+        anthemAudioRef.current?.pause();
+      } catch {}
+      if (!a) return;
+      if (a.url) {
+        const el = new Audio(a.url);
+        el.volume = 0.55;
+        anthemAudioRef.current = el;
+        void el.play().catch(() => {});
+        window.setTimeout(() => {
+          try {
+            el.pause();
+          } catch {}
+        }, 2600);
+        return;
+      }
+      if (!a.melody) return;
+      let t = 0;
+      for (const [freq, dur] of a.melody) {
+        window.setTimeout(() => playTone(freq, dur, a.wave ?? "square", 0.16), t * 1000);
+        t += dur;
+      }
+    };
+  }, []);
+
+
 
   useEffect(() => {
     const myId = myIdRef.current;
@@ -208,14 +306,23 @@ function EggballPage() {
     let myCharge = 0;
     let prevCelebrate = 0;
     let prevEnded = false;
-    // Ability state (local player only)
-    const cooldownUntil: Record<"q" | "e", number> = { q: 0, e: 0 };
-    const cooldownLen: Record<"q" | "e", number> = { q: 1, e: 1 };
+    // Ability state (local player only) — a single equipped ability on Q or E
+    const cooldownUntil = { v: 0 };
+    const cooldownLen = { v: 1 };
     let dashDirX = 0;
     let dashDirY = 0;
     let lastAbilityUi = 0;
     let prevQ = false;
     let prevE = false;
+    let prevCountdown = 0;
+    let lastGoalAt = 0;
+    let lastHistory = 0;
+    const history: Snapshot[] = [];
+    let glitchTeleportAt = 0;
+    let rewindFxUntil = 0;
+    // Black hole goal explosion (replicated implicitly: every client spawns it
+    // from the same celebration event, and the host applies the pull)
+    const blackhole = { until: 0, x: 0, y: 0 };
 
 
     type Particle = { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; color: string; emoji?: string; ring?: boolean; size: number };
@@ -242,6 +349,28 @@ function EggballPage() {
             const sp = 200 + burst * 90;
             particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1.1 + burst * 0.2, maxLife: 1.1 + burst * 0.2, color: ex.colors![burst % ex.colors!.length], size: 4 });
           }
+        }
+      } else if (ex.kind === "money") {
+        for (let i = 0; i < 34; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const sp = 90 + Math.random() * 300;
+          particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 260, life: 1.8, maxLife: 1.8, color: ex.colors![i % ex.colors!.length], emoji: ex.emojis![i % ex.emojis!.length], size: 18 + Math.random() * 14 });
+        }
+      } else if (ex.kind === "blast") {
+        for (let i = 0; i < 70; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const sp = 150 + Math.random() * 520;
+          particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0.5 + Math.random() * 0.7, maxLife: 1.2, color: ex.colors![i % ex.colors!.length], size: 5 + Math.random() * 9 });
+        }
+        particles.push({ x, y, vx: 0, vy: 0, life: 0.5, maxLife: 0.5, color: "#ff7a1a", ring: true, size: 14 });
+      } else if (ex.kind === "blackhole") {
+        blackhole.until = performance.now() + BLACKHOLE_TIME * 1000;
+        blackhole.x = x;
+        blackhole.y = y;
+        for (let i = 0; i < 40; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const r = 90 + Math.random() * 160;
+          particles.push({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r, vx: -Math.cos(a) * 260, vy: -Math.sin(a) * 260, life: 1.0, maxLife: 1.0, color: ex.colors![i % ex.colors!.length], size: 4 + Math.random() * 4 });
         }
       }
       // Every explosion gets a shockwave ring
@@ -412,8 +541,8 @@ function EggballPage() {
           skin: shopRef.current.skin,
           explosion: shopRef.current.explosion,
           charge: 0,
-          abilityQ: shopRef.current.abilityQ,
-          abilityE: shopRef.current.abilityE,
+          anthem: shopRef.current.anthem,
+          ability: shopRef.current.ability,
           magnetUntil: 0,
           curlUntil: 0,
           dashUntil: 0,
@@ -424,8 +553,8 @@ function EggballPage() {
       if (nameRef.current && me.name !== nameRef.current) me.name = nameRef.current;
       me.skin = shopRef.current.skin;
       me.explosion = shopRef.current.explosion;
-      me.abilityQ = shopRef.current.abilityQ;
-      me.abilityE = shopRef.current.abilityE;
+      me.anthem = shopRef.current.anthem;
+      me.ability = shopRef.current.ability;
       return me;
     }
 
@@ -497,12 +626,11 @@ function EggballPage() {
           me.lastDirY = iy;
         }
 
-        // ---- Abilities (Q / E) ----
+        // ---- Ability (single equipped slot, fired with Q or E) ----
         {
-          const tryAbility = (slot: "q" | "e") => {
-            const id = slot === "q" ? shopRef.current.abilityQ : shopRef.current.abilityE;
-            const ab = getAbility(id);
-            if (!ab || now < cooldownUntil[slot]) return;
+          const tryAbility = () => {
+            const ab = getAbility(shopRef.current.ability);
+            if (!ab || now < cooldownUntil.v) return;
             if (ab.id === "dash") {
               const dx = len > 0 ? ix : me.lastDirX;
               const dy = len > 0 ? iy : me.lastDirY;
@@ -519,16 +647,68 @@ function EggballPage() {
             } else if (ab.id === "curl") {
               me.curlUntil = now + CURL_WINDOW * 1000;
               playTone(520, 0.18, "triangle", 0.12, 900);
+            } else if (ab.id === "dribble") {
+              const dx = len > 0 ? ix : me.lastDirX;
+              const dy = len > 0 ? iy : me.lastDirY;
+              const dl = Math.hypot(dx, dy) || 1;
+              dashDirX = dx / dl;
+              dashDirY = dy / dl;
+              me.dribbleUntil = now + DRIBBLE_TIME * 1000;
+              playTone(300, 0.2, "square", 0.13, 520);
+            } else if (ab.id === "gamble") {
+              // Weighted roll: 1 is common, 10 is rare.
+              const r = Math.random();
+              const roll = Math.max(1, Math.min(10, Math.ceil(10 * Math.pow(r, 2.4))));
+              me.gambleRoll = roll;
+              me.gambleUntil = now + GAMBLE_WINDOW * 1000;
+              playTone(300 + roll * 70, 0.22, "square", 0.16, 200 + roll * 90);
+            } else if (ab.id === "debug") {
+              me.glitchUntil = now + DEBUG_GLITCH * 1000;
+              glitchTeleportAt = now + DEBUG_GLITCH * 1000;
+              playTone(90, 0.4, "square", 0.14, 1500);
+            } else if (ab.id === "rewind") {
+              // Cannot rewind past a goal — that would un-score it.
+              const target = now - REWIND_SECONDS * 1000;
+              if (lastGoalAt > target) return;
+              const snap = history.find((h) => h.t >= target) ?? history[0];
+              if (!snap) return;
+              if (hostId === myId) {
+                ball.x = snap.bx;
+                ball.y = snap.by;
+                ball.vx = snap.bvx;
+                ball.vy = snap.bvy;
+                ball.spin = 0;
+                timeLeft = Math.min(GAME_LENGTH, snap.timeLeft);
+              } else {
+                channel.send({ type: "broadcast", event: "rewind", payload: { t: target } });
+              }
+              if (snap.hasMe) {
+                me.x = snap.mx;
+                me.y = snap.my;
+              }
+              rewindFxUntil = now + 700;
+              sfxRewind();
             }
-            cooldownUntil[slot] = now + ab.cooldown * 1000;
-            cooldownLen[slot] = ab.cooldown * 1000;
+            cooldownUntil.v = now + ab.cooldown * 1000;
+            cooldownLen.v = ab.cooldown * 1000;
+            sfxAbility();
+            bumpQuestRef.current("abilities");
           };
           const qDown = keys.has("q");
           const eDown = keys.has("e");
-          if (qDown && !prevQ) tryAbility("q");
-          if (eDown && !prevE) tryAbility("e");
+          if ((qDown && !prevQ) || (eDown && !prevE)) tryAbility();
           prevQ = qDown;
           prevE = eDown;
+        }
+
+        // Debug teleport: after the glitch, pop to a random spot near the ball
+        if (glitchTeleportAt && now >= glitchTeleportAt) {
+          glitchTeleportAt = 0;
+          const a = Math.random() * Math.PI * 2;
+          const r = 120 + Math.random() * 160;
+          me.x = Math.max(PLAYER_R, Math.min(FIELD_W - PLAYER_R, ball.x + Math.cos(a) * r));
+          me.y = Math.max(PLAYER_R, Math.min(FIELD_H - PLAYER_R, ball.y + Math.sin(a) * r));
+          playTone(1200, 0.12, "square", 0.14, 300);
         }
 
         // Target velocity (dash overrides speed along the dash direction)
@@ -635,17 +815,38 @@ function EggballPage() {
             const nx = bdx / bd;
             const ny = bdy / bd;
             const powered = myCharge >= 1;
-            const power = KICK_POWER * (powered ? POWER_MULT : 1);
+            // Gamble: a loaded roll (1..10) scales this one kick. 1 = no boost.
+            let gambleMult = 1;
+            if ((me.gambleUntil ?? 0) > now) {
+              const roll = me.gambleRoll ?? 1;
+              gambleMult = 1 + ((roll - 1) / 9) * (GAMBLE_MAX_MULT - 1);
+              me.gambleUntil = 0;
+              playTone(220 + roll * 80, 0.24, "sawtooth", 0.18, 120);
+              for (let i = 0; i < roll * 3; i++) {
+                const a = Math.random() * Math.PI * 2;
+                particles.push({ x: ball.x, y: ball.y, vx: Math.cos(a) * 180, vy: Math.sin(a) * 180, life: 0.5, maxLife: 0.5, color: "#facc15", size: 3 });
+              }
+            }
+            const power = KICK_POWER * (powered ? POWER_MULT : 1) * gambleMult;
             const nvx = nx * power;
             const nvy = ny * power;
-            // Curl: if armed, bend the shot toward the direction we're running.
+            // Curl: bends AWAY first, then swings back inward toward the goal
+            // we're attacking.
             let spin = 0;
+            let curlIn = 0;
             if ((me.curlUntil ?? 0) > now) {
               const mdx = me.lastDirX;
               const mdy = me.lastDirY;
-              const cross = nx * mdy - ny * mdx; // >0 = curl clockwise
-              const sign = cross === 0 ? 1 : Math.sign(cross);
-              spin = sign * CURL_RATE * (0.55 + Math.min(1, Math.abs(cross)) * 0.45);
+              const cross = nx * mdy - ny * mdx; // >0 = clockwise bend
+              const outSign = cross === 0 ? 1 : Math.sign(cross);
+              // Inward = the rotation that turns the shot toward the goal mouth.
+              const goalX = me.team === "red" ? FIELD_W : 0;
+              const goalY = FIELD_H / 2;
+              const gx = goalX - ball.x;
+              const gy = goalY - ball.y;
+              const toGoal = nx * gy - ny * gx;
+              curlIn = toGoal === 0 ? -outSign : Math.sign(toGoal);
+              spin = outSign * CURL_RATE;
               me.curlUntil = 0;
               playTone(760, 0.25, "sine", 0.14, 380);
               for (let i = 0; i < 14; i++) {
@@ -655,6 +856,7 @@ function EggballPage() {
             }
             if (powered) {
               sfxPower();
+              bumpQuestRef.current("powerKicks");
               for (let i = 0; i < 18; i++) {
                 const a = Math.atan2(ny, nx) + (Math.random() - 0.5) * 1.2;
                 const sp = 80 + Math.random() * 200;
@@ -664,16 +866,25 @@ function EggballPage() {
             } else {
               sfxKick();
             }
+            bumpQuestRef.current("kicks");
             myCharge = 0;
             me.charge = 0;
+            me.dribbleUntil = 0;
+            const flipAt = spin ? now + CURL_OUT_TIME * 1000 : 0;
             if (hostId === myId) {
               ball.vx = nvx;
               ball.vy = nvy;
               ball.spin = spin;
+              ball.curlFlipAt = flipAt;
+              ball.curlIn = curlIn;
               ballKickedAt = now;
               lastTouchId = myId;
             } else {
-              channel.send({ type: "broadcast", event: "kick", payload: { bx: ball.x, by: ball.y, bvx: nvx, bvy: nvy, id: myId, spin } });
+              channel.send({
+                type: "broadcast",
+                event: "kick",
+                payload: { bx: ball.x, by: ball.y, bvx: nvx, bvy: nvy, id: myId, spin, curlIn, flipMs: spin ? CURL_OUT_TIME * 1000 : 0 },
+              });
             }
           }
         }
@@ -700,14 +911,36 @@ function EggballPage() {
           lastTouchId = p.id;
         }
 
-        // Curl spin: rotate the velocity vector, decaying over ~1s
+        // Black hole goal explosion: drags every player (and the ball) inward
+        if (blackhole.until > now) {
+          const pull = (o: { x: number; y: number; vx: number; vy: number }) => {
+            const dx = blackhole.x - o.x;
+            const dy = blackhole.y - o.y;
+            const d = Math.hypot(dx, dy) || 1;
+            o.vx += (dx / d) * BLACKHOLE_PULL * dt;
+            o.vy += (dy / d) * BLACKHOLE_PULL * dt;
+          };
+          pull(ball);
+          for (const p of players.values()) pull(p);
+        }
+
+        // Curl spin: two-phase — bends outward first, then swings back inward
+        // toward the goal the kicker is attacking.
         if (ball.spin) {
+          if (ball.curlFlipAt && now >= ball.curlFlipAt) {
+            ball.spin = -Math.abs(ball.spin) * Math.sign(ball.curlIn || 1) * -1;
+            ball.spin = Math.abs(ball.spin) * (ball.curlIn || 1);
+            ball.curlFlipAt = 0;
+          }
           const ang = Math.atan2(ball.vy, ball.vx) + ball.spin * dt;
           const sp2 = Math.hypot(ball.vx, ball.vy);
           ball.vx = Math.cos(ang) * sp2;
           ball.vy = Math.sin(ang) * sp2;
-          ball.spin *= Math.pow(0.975, dt * 60);
-          if (Math.abs(ball.spin) < 0.05) ball.spin = 0;
+          ball.spin *= Math.pow(0.988, dt * 60);
+          if (Math.abs(ball.spin) < 0.05) {
+            ball.spin = 0;
+            ball.curlFlipAt = 0;
+          }
         }
 
         // Apply friction
@@ -887,20 +1120,26 @@ function EggballPage() {
       }
 
 
+      // Every kickoff (start of a round and after every goal) the ability
+      // starts on full cooldown.
+      if (prevCountdown > 0 && countdown <= 0) {
+        const ab0 = getAbility(shopRef.current.ability);
+        if (ab0) {
+          cooldownUntil.v = now + ab0.cooldown * 1000;
+          cooldownLen.v = ab0.cooldown * 1000;
+        }
+      }
+      prevCountdown = countdown;
+
       // Ability HUD (throttled to ~15Hz)
       if (now - lastAbilityUi > 66) {
         lastAbilityUi = now;
-        const frac = (slot: "q" | "e") => {
-          const left = cooldownUntil[slot] - now;
-          if (left <= 0) return 1;
-          return Math.max(0, Math.min(1, 1 - left / cooldownLen[slot]));
-        };
-        const armed = (me?.curlUntil ?? 0) > now;
+        const left = cooldownUntil.v - now;
+        const frac = left <= 0 ? 1 : Math.max(0, Math.min(1, 1 - left / cooldownLen.v));
         setAbilityUi({
-          q: frac("q"),
-          e: frac("e"),
-          qArmed: armed && shopRef.current.abilityQ === "curl",
-          eArmed: armed && shopRef.current.abilityE === "curl",
+          frac,
+          armed: (me?.curlUntil ?? 0) > now || (me?.gambleUntil ?? 0) > now,
+          roll: (me?.gambleUntil ?? 0) > now ? me?.gambleRoll ?? 0 : 0,
         });
       }
 
@@ -941,20 +1180,46 @@ function EggballPage() {
         }
       }
 
-      // Goal explosion + rewards (runs on every client from replicated state)
+      // Goal explosion + anthem + rewards (runs on every client from replicated state)
       if (celebrate > 0 && prevCelebrate <= 0) {
+        lastGoalAt = now;
         const scorer = celebrateId === myId ? getMyPlayer() : players.get(celebrateId);
         spawnExplosion(ball.x, ball.y, scorer?.explosion);
-        if (celebrateId === myId) addMoneyRef.current(GOAL_REWARD);
+        playAnthemRef.current(getAnthem(scorer?.anthem));
+        if (celebrateId === myId) {
+          addMoneyRef.current(GOAL_REWARD);
+          bumpQuestRef.current("goals");
+        }
       }
       prevCelebrate = celebrate;
 
       if (ended && !prevEnded) {
-        if (teamRef.current && joinedRef.current && winner === teamRef.current) {
-          addMoneyRef.current(WIN_REWARD);
+        if (teamRef.current && joinedRef.current) {
+          bumpQuestRef.current("games");
+          if (winner === teamRef.current) {
+            addMoneyRef.current(WIN_REWARD);
+            bumpQuestRef.current("wins");
+          }
         }
       }
       prevEnded = ended;
+
+      // Rewind snapshots (ball + clock + my own position)
+      if (now - lastHistory > HISTORY_STEP) {
+        lastHistory = now;
+        history.push({
+          t: now,
+          bx: ball.x,
+          by: ball.y,
+          bvx: ball.vx,
+          bvy: ball.vy,
+          timeLeft,
+          mx: me?.x ?? 0,
+          my: me?.y ?? 0,
+          hasMe: !!me,
+        });
+        while (history.length && now - history[0].t > 9000) history.shift();
+      }
 
       updateParticles(dt);
 
@@ -1040,6 +1305,13 @@ function EggballPage() {
         const kicking = p.kickUntil > now;
         const skin = getSkin(p.skin);
         const teamColor = p.team === "red" ? "#e23c3c" : "#3c6ee2";
+        const glitching = (p.glitchUntil ?? 0) > now;
+        // Outer transform so the Debug glitch can shake / ghost the whole player
+        ctx.save();
+        if (glitching) {
+          ctx.globalAlpha = 0.4 + Math.random() * 0.5;
+          ctx.translate((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14);
+        }
         ctx.save();
         ctx.beginPath();
         ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI * 2);
@@ -1067,6 +1339,25 @@ function EggballPage() {
           ctx.strokeStyle = "rgba(125,211,252,0.85)";
           ctx.stroke();
         }
+        // Gamble loaded: golden dashed ring
+        if ((p.gambleUntil ?? 0) > now) {
+          ctx.save();
+          ctx.setLineDash([6, 6]);
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, PLAYER_R + 9, 0, Math.PI * 2);
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = "rgba(250,204,21,0.9)";
+          ctx.stroke();
+          ctx.restore();
+        }
+        // Dribbling: trailing streak
+        if ((p.dribbleUntil ?? 0) > now) {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, PLAYER_R + 4, 0, Math.PI * 2);
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = "rgba(134,239,172,0.85)";
+          ctx.stroke();
+        }
         ctx.beginPath();
         ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI * 2);
         ctx.lineWidth = 3;
@@ -1086,6 +1377,7 @@ function EggballPage() {
           ctx.fillStyle = p.team === "red" ? "#ff6b6b" : "#6ea8ff";
           ctx.fillText(display, p.x, p.y + PLAYER_R + 4);
         }
+        ctx.restore();
       }
       // Magnet beam: crackling line from the ball to each magnetising player
       for (const p of all) {
@@ -1114,7 +1406,22 @@ function EggballPage() {
         ctx.stroke();
         ctx.restore();
       }
+      // Black hole goal explosion: swirling void that drags everyone in
+      if (blackhole.until > now) {
+        const bt = Math.max(0, (blackhole.until - now) / (BLACKHOLE_TIME * 1000));
+        const rad = 80 * Math.sin(Math.min(1, bt) * Math.PI) + 16;
+        const grad = ctx.createRadialGradient(blackhole.x, blackhole.y, 2, blackhole.x, blackhole.y, rad);
+        grad.addColorStop(0, "#000000");
+        grad.addColorStop(0.65, "rgba(59,26,92,0.9)");
+        grad.addColorStop(1, "rgba(155,93,229,0)");
+        ctx.beginPath();
+        ctx.arc(blackhole.x, blackhole.y, rad, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
+      }
+
       // Ball
+
 
       ctx.beginPath();
       ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
@@ -1263,17 +1570,26 @@ function EggballPage() {
 
   const equipItem = (kind: EquipKind, id: string) => {
     setShop((prev) => {
-      let next = { ...prev, [kind]: id } as ShopState;
-      // Don't allow the same ability in both slots — swap instead.
-      if (kind === "abilityQ" && next.abilityE === id) next = { ...next, abilityE: prev.abilityQ };
-      if (kind === "abilityE" && next.abilityQ === id) next = { ...next, abilityQ: prev.abilityE };
+      const next = { ...prev, [kind]: id } as ShopState;
       shopRef.current = next;
       saveShop(next);
       return next;
     });
   };
 
-  const AbilityDial = ({ slot, id, frac, armed }: { slot: string; id: string; frac: number; armed: boolean }) => {
+  const claimQuest = (scope: "daily" | "weekly", questId: string, reward: number) => {
+    setQuests((prev) => {
+      const board = prev[scope];
+      if (board.claimed.includes(questId)) return prev;
+      const next = { ...prev, [scope]: { ...board, claimed: [...board.claimed, questId] } };
+      questsRef.current = next;
+      saveQuests(next);
+      return next;
+    });
+    addMoneyRef.current(reward);
+  };
+
+  const AbilityDial = ({ id, frac, armed, roll }: { id: string; frac: number; armed: boolean; roll: number }) => {
     const ability = ABILITIES.find((a) => a.id === id);
     if (!ability) return null;
     const R = 26;
@@ -1303,15 +1619,19 @@ function EggballPage() {
         >
           {ability.icon}
         </div>
-        <span className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-neutral-700 text-[11px] font-bold flex items-center justify-center">
-          {slot}
+        <span className="absolute -bottom-1 -right-1 h-5 px-1 rounded-full bg-neutral-700 text-[11px] font-bold flex items-center justify-center">
+          Q/E
         </span>
+        {roll > 0 && (
+          <span className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-yellow-400 text-black text-xs font-black flex items-center justify-center">
+            {roll}
+          </span>
+        )}
       </div>
     );
   };
 
   return (
-
     <div className="h-screen w-screen bg-neutral-900 text-white flex flex-col items-center overflow-hidden">
       <div className="flex items-center gap-6 text-2xl font-bold py-2 shrink-0">
         <span className="text-red-400">RED {score.red}</span>
@@ -1327,13 +1647,27 @@ function EggballPage() {
         )}
         {joined && (
           <button
-            onClick={() => setShopOpen(true)}
+            onClick={() => {
+              setQuestsOpen(false);
+              setShopOpen(true);
+            }}
             className="px-3 py-1 rounded-md bg-yellow-500 hover:bg-yellow-400 text-black text-sm font-bold"
           >
             Shop
           </button>
         )}
-        <span className="text-sm font-bold text-yellow-400">${shop.money}</span>
+        {joined && (
+          <button
+            onClick={() => {
+              setShopOpen(false);
+              setQuestsOpen(true);
+            }}
+            className="px-3 py-1 rounded-md bg-emerald-500 hover:bg-emerald-400 text-black text-sm font-bold"
+          >
+            Quests
+          </button>
+        )}
+        <span className="text-sm font-bold text-yellow-400">${shop.money.toLocaleString()}</span>
       </div>
       <div
         className="relative"
@@ -1348,10 +1682,9 @@ function EggballPage() {
           height={CANVAS_H}
           style={{ width: "100%", height: "100%", display: "block", borderRadius: 8 }}
         />
-        {joined && !shopOpen && !showMenu && (
+        {joined && !shopOpen && !questsOpen && !showMenu && (
           <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-4">
-            <AbilityDial slot="Q" id={shop.abilityQ} frac={abilityUi.q} armed={abilityUi.qArmed} />
-            <AbilityDial slot="E" id={shop.abilityE} frac={abilityUi.e} armed={abilityUi.eArmed} />
+            <AbilityDial id={shop.ability} frac={abilityUi.frac} armed={abilityUi.armed} roll={abilityUi.roll} />
           </div>
         )}
 
@@ -1360,15 +1693,24 @@ function EggballPage() {
             shop={shop}
             onBuy={buyItem}
             onEquip={equipItem}
+            onPreviewAnthem={(a) => playAnthemRef.current(a)}
             onClose={() => setShopOpen(false)}
           />
         )}
-        {showMenu && !shopOpen && (
+        {questsOpen && !shopOpen && (
+          <QuestsPanel
+            quests={quests}
+            money={shop.money}
+            onClaim={claimQuest}
+            onClose={() => setQuestsOpen(false)}
+          />
+        )}
+        {showMenu && !shopOpen && !questsOpen && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/70 rounded-lg">
             <div className="bg-neutral-800 rounded-xl p-8 shadow-2xl text-center max-w-sm">
               <h1 className="text-3xl font-bold mb-2">Eggball</h1>
               <p className="text-neutral-400 mb-4 text-sm">
-                Pick a team to jump in. WASD/arrows to move. X or Space to kick.
+                Pick a team to jump in. WASD/arrows to move. X or Space to kick. Q or E for your ability.
               </p>
               <input
                 type="text"
@@ -1410,4 +1752,5 @@ function EggballPage() {
     </div>
   );
 }
+
 

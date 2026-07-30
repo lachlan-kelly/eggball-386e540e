@@ -1,8 +1,24 @@
 import { useState } from "react";
-import { ABILITIES, EXPLOSIONS, SKINS, type EquipKind, type ShopState, type SkinItem, type ExplosionItem } from "@/lib/shop";
+import {
+  ABILITIES,
+  ANTHEMS,
+  EXPLOSIONS,
+  SKINS,
+  effectivePrice,
+  FREE_MODE,
+  type AnthemItem,
+  type EquipKind,
+  type ShopState,
+  type SkinItem,
+  type ExplosionItem,
+} from "@/lib/shop";
 
-type Section = "skins" | "explosions" | "abilities";
+type Section = "skins" | "explosions" | "abilities" | "anthems";
 
+function priceLabel(list: number) {
+  if (list === 0) return "Free";
+  return FREE_MODE ? `Free (normally $${list.toLocaleString()})` : `$${list.toLocaleString()}`;
+}
 
 function SkinPreview({ skin }: { skin: SkinItem }) {
   const base = skin.color || "#e23c3c";
@@ -25,8 +41,12 @@ function SkinPreview({ skin }: { skin: SkinItem }) {
 function ExplosionPreview({ item }: { item: ExplosionItem }) {
   return (
     <div className="h-12 w-12 rounded-lg bg-neutral-900 flex items-center justify-center text-xl shrink-0">
-      {item.kind === "emoji" ? (
+      {item.kind === "emoji" || item.kind === "money" ? (
         item.emojis?.[0]
+      ) : item.kind === "blast" ? (
+        "💥"
+      ) : item.kind === "blackhole" ? (
+        "🕳️"
       ) : item.kind === "confetti" ? (
         <div className="flex gap-0.5">
           {(item.colors ?? []).slice(0, 4).map((c, i) => (
@@ -47,15 +67,16 @@ export function ShopPanel({
   shop,
   onBuy,
   onEquip,
+  onPreviewAnthem,
   onClose,
 }: {
   shop: ShopState;
   onBuy: (id: string, price: number) => void;
   onEquip: (kind: EquipKind, id: string) => void;
+  onPreviewAnthem?: (anthem: AnthemItem) => void;
   onClose: () => void;
 }) {
   const [section, setSection] = useState<Section>("skins");
-
 
   const rows =
     section === "skins"
@@ -71,13 +92,14 @@ export function ShopPanel({
         <aside className="w-48 shrink-0 bg-neutral-900 p-4 flex flex-col gap-2">
           <div className="mb-3">
             <p className="text-xs uppercase tracking-wide text-neutral-500">Balance</p>
-            <p className="text-2xl font-bold text-yellow-400">${shop.money}</p>
+            <p className="text-2xl font-bold text-yellow-400">${shop.money.toLocaleString()}</p>
           </div>
           {(
             [
               ["skins", "Skins"],
               ["explosions", "Goal Explosions"],
               ["abilities", "Abilities"],
+              ["anthems", "Player Anthems"],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -103,11 +125,10 @@ export function ShopPanel({
           {section === "abilities" ? (
             <div className="flex flex-col gap-3">
               <p className="text-xs text-neutral-500">
-                Equip one ability to <b>Q</b> and one to <b>E</b>. Free during testing.
+                Equip <b>one</b> ability — trigger it in-game with <b>Q</b> or <b>E</b>. Free during testing.
               </p>
               {ABILITIES.map((a) => {
-                const onQ = shop.abilityQ === a.id;
-                const onE = shop.abilityE === a.id;
+                const equipped = shop.ability === a.id;
                 return (
                   <div key={a.id} className="flex items-center gap-3 bg-neutral-900/60 rounded-lg p-3">
                     <div className="h-12 w-12 rounded-full bg-neutral-800 border-2 border-neutral-600 flex items-center justify-center text-xl shrink-0">
@@ -115,48 +136,84 @@ export function ShopPanel({
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold text-sm">
-                        {a.name}{" "}
-                        <span className="text-neutral-500 font-normal">· {a.cooldown}s cooldown</span>
+                        {a.name} <span className="text-neutral-500 font-normal">· {a.cooldown}s cooldown</span>
                       </p>
                       <p className="text-xs text-neutral-400">{a.description}</p>
-                      <p className="text-[11px] text-yellow-500/80">
-                        Free (normally ${a.listPrice})
-                      </p>
+                      <p className="text-[11px] text-yellow-500/80">{priceLabel(a.listPrice)}</p>
                     </div>
-                    <div className="flex gap-2 shrink-0">
+                    {equipped ? (
+                      <span className="text-xs font-bold text-green-400 shrink-0">Equipped</span>
+                    ) : (
                       <button
-                        onClick={() => onEquip("abilityQ", a.id)}
-                        className={`px-3 py-1.5 rounded-md text-xs font-bold ${
-                          onQ ? "bg-green-500 text-black" : "bg-neutral-700 hover:bg-neutral-600"
-                        }`}
+                        onClick={() => onEquip("ability", a.id)}
+                        className="px-3 py-1.5 rounded-md bg-neutral-700 hover:bg-neutral-600 text-xs font-semibold shrink-0"
                       >
-                        Q
+                        Equip
                       </button>
-                      <button
-                        onClick={() => onEquip("abilityE", a.id)}
-                        className={`px-3 py-1.5 rounded-md text-xs font-bold ${
-                          onE ? "bg-green-500 text-black" : "bg-neutral-700 hover:bg-neutral-600"
-                        }`}
-                      >
-                        E
-                      </button>
-                    </div>
+                    )}
                   </div>
                 );
               })}
             </div>
-
+          ) : section === "anthems" ? (
+            <div className="flex flex-col gap-3">
+              <p className="text-xs text-neutral-500">
+                Your anthem plays for everyone during the goal-scorer zoom-in.
+              </p>
+              {ANTHEMS.map((a) => {
+                const owned = shop.owned.includes(a.id) || effectivePrice(a.price) === 0;
+                const equipped = shop.anthem === a.id;
+                return (
+                  <div key={a.id} className="flex items-center gap-3 bg-neutral-900/60 rounded-lg p-3">
+                    <div className="h-12 w-12 rounded-lg bg-neutral-800 flex items-center justify-center text-xl shrink-0">
+                      {a.icon}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-sm truncate">{a.name}</p>
+                      <p className="text-xs text-neutral-400">{priceLabel(a.price)}</p>
+                    </div>
+                    {a.id !== "anthem-none" && onPreviewAnthem && (
+                      <button
+                        onClick={() => onPreviewAnthem(a)}
+                        className="px-2 py-1.5 rounded-md bg-neutral-700 hover:bg-neutral-600 text-xs font-semibold shrink-0"
+                      >
+                        ▶
+                      </button>
+                    )}
+                    {equipped ? (
+                      <span className="text-xs font-bold text-green-400 shrink-0">Equipped</span>
+                    ) : owned ? (
+                      <button
+                        onClick={() => onEquip("anthem", a.id)}
+                        className="px-3 py-1.5 rounded-md bg-neutral-700 hover:bg-neutral-600 text-xs font-semibold shrink-0"
+                      >
+                        Equip
+                      </button>
+                    ) : (
+                      <button
+                        disabled={shop.money < effectivePrice(a.price)}
+                        onClick={() => onBuy(a.id, effectivePrice(a.price))}
+                        className="px-3 py-1.5 rounded-md bg-yellow-500 hover:bg-yellow-400 disabled:bg-neutral-700 disabled:text-neutral-500 text-black text-xs font-bold shrink-0"
+                      >
+                        Buy
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           ) : (
             <div className="grid grid-cols-2 gap-3">
               {rows.map((r) => {
-                const owned = shop.owned.includes(r.id) || r.price === 0;
+                const cost = effectivePrice(r.price);
+                const owned = shop.owned.includes(r.id) || cost === 0;
                 const equipped = r.kind === "skin" ? shop.skin === r.id : shop.explosion === r.id;
                 return (
                   <div key={r.id} className="flex items-center gap-3 bg-neutral-900/60 rounded-lg p-3">
                     {r.preview}
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold text-sm truncate">{r.name}</p>
-                      <p className="text-xs text-neutral-400">{r.price === 0 ? "Free" : `$${r.price}`}</p>
+                      <p className="text-xs text-neutral-400">{priceLabel(r.price)}</p>
                     </div>
                     {equipped ? (
                       <span className="text-xs font-bold text-green-400">Equipped</span>
@@ -169,8 +226,8 @@ export function ShopPanel({
                       </button>
                     ) : (
                       <button
-                        disabled={shop.money < r.price}
-                        onClick={() => onBuy(r.id, r.price)}
+                        disabled={shop.money < cost}
+                        onClick={() => onBuy(r.id, cost)}
                         className="px-3 py-1.5 rounded-md bg-yellow-500 hover:bg-yellow-400 disabled:bg-neutral-700 disabled:text-neutral-500 text-black text-xs font-bold"
                       >
                         Buy
