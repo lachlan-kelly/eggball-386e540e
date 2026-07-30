@@ -75,12 +75,16 @@ interface PlayerState {
   name: string;
   skin?: string;
   explosion?: string;
+  anthem?: string;
   charge?: number; // 0..1 power-kick charge
-  abilityQ?: string;
-  abilityE?: string;
+  ability?: string;
   magnetUntil?: number; // timestamp ms while the magnet is pulling
   curlUntil?: number; // timestamp ms while curl is armed
   dashUntil?: number; // timestamp ms while dashing
+  dribbleUntil?: number; // timestamp ms while dribbling (ball travels with you)
+  gambleUntil?: number; // timestamp ms while a gamble roll is loaded
+  gambleRoll?: number; // 1..10 rolled kick power
+  glitchUntil?: number; // timestamp ms while the Debug glitch plays
 }
 
 interface BallState {
@@ -89,6 +93,20 @@ interface BallState {
   vx: number;
   vy: number;
   spin?: number; // curl: rad/sec applied to the velocity direction
+  curlFlipAt?: number; // timestamp ms when the curl swings back inward
+  curlIn?: number; // sign of the inward (goal-bound) curl
+}
+
+interface Snapshot {
+  t: number;
+  bx: number;
+  by: number;
+  bvx: number;
+  bvy: number;
+  timeLeft: number;
+  mx: number;
+  my: number;
+  hasMe: boolean;
 }
 
 
