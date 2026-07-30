@@ -602,12 +602,11 @@ function EggballPage() {
           me.lastDirY = iy;
         }
 
-        // ---- Abilities (Q / E) ----
+        // ---- Ability (single equipped slot, fired with Q or E) ----
         {
-          const tryAbility = (slot: "q" | "e") => {
-            const id = slot === "q" ? shopRef.current.abilityQ : shopRef.current.abilityE;
-            const ab = getAbility(id);
-            if (!ab || now < cooldownUntil[slot]) return;
+          const tryAbility = () => {
+            const ab = getAbility(shopRef.current.ability);
+            if (!ab || now < cooldownUntil.v) return;
             if (ab.id === "dash") {
               const dx = len > 0 ? ix : me.lastDirX;
               const dy = len > 0 ? iy : me.lastDirY;
@@ -624,16 +623,68 @@ function EggballPage() {
             } else if (ab.id === "curl") {
               me.curlUntil = now + CURL_WINDOW * 1000;
               playTone(520, 0.18, "triangle", 0.12, 900);
+            } else if (ab.id === "dribble") {
+              const dx = len > 0 ? ix : me.lastDirX;
+              const dy = len > 0 ? iy : me.lastDirY;
+              const dl = Math.hypot(dx, dy) || 1;
+              dashDirX = dx / dl;
+              dashDirY = dy / dl;
+              me.dribbleUntil = now + DRIBBLE_TIME * 1000;
+              playTone(300, 0.2, "square", 0.13, 520);
+            } else if (ab.id === "gamble") {
+              // Weighted roll: 1 is common, 10 is rare.
+              const r = Math.random();
+              const roll = Math.max(1, Math.min(10, Math.ceil(10 * Math.pow(r, 2.4))));
+              me.gambleRoll = roll;
+              me.gambleUntil = now + GAMBLE_WINDOW * 1000;
+              playTone(300 + roll * 70, 0.22, "square", 0.16, 200 + roll * 90);
+            } else if (ab.id === "debug") {
+              me.glitchUntil = now + DEBUG_GLITCH * 1000;
+              glitchTeleportAt = now + DEBUG_GLITCH * 1000;
+              playTone(90, 0.4, "square", 0.14, 1500);
+            } else if (ab.id === "rewind") {
+              // Cannot rewind past a goal — that would un-score it.
+              const target = now - REWIND_SECONDS * 1000;
+              if (lastGoalAt > target) return;
+              const snap = history.find((h) => h.t >= target) ?? history[0];
+              if (!snap) return;
+              if (hostId === myId) {
+                ball.x = snap.bx;
+                ball.y = snap.by;
+                ball.vx = snap.bvx;
+                ball.vy = snap.bvy;
+                ball.spin = 0;
+                timeLeft = Math.min(GAME_LENGTH, snap.timeLeft);
+              } else {
+                channel.send({ type: "broadcast", event: "rewind", payload: { t: target } });
+              }
+              if (snap.hasMe) {
+                me.x = snap.mx;
+                me.y = snap.my;
+              }
+              rewindFxUntil = now + 700;
+              sfxRewind();
             }
-            cooldownUntil[slot] = now + ab.cooldown * 1000;
-            cooldownLen[slot] = ab.cooldown * 1000;
+            cooldownUntil.v = now + ab.cooldown * 1000;
+            cooldownLen.v = ab.cooldown * 1000;
+            sfxAbility();
+            bumpQuestRef.current("abilities");
           };
           const qDown = keys.has("q");
           const eDown = keys.has("e");
-          if (qDown && !prevQ) tryAbility("q");
-          if (eDown && !prevE) tryAbility("e");
+          if ((qDown && !prevQ) || (eDown && !prevE)) tryAbility();
           prevQ = qDown;
           prevE = eDown;
+        }
+
+        // Debug teleport: after the glitch, pop to a random spot near the ball
+        if (glitchTeleportAt && now >= glitchTeleportAt) {
+          glitchTeleportAt = 0;
+          const a = Math.random() * Math.PI * 2;
+          const r = 120 + Math.random() * 160;
+          me.x = Math.max(PLAYER_R, Math.min(FIELD_W - PLAYER_R, ball.x + Math.cos(a) * r));
+          me.y = Math.max(PLAYER_R, Math.min(FIELD_H - PLAYER_R, ball.y + Math.sin(a) * r));
+          playTone(1200, 0.12, "square", 0.14, 300);
         }
 
         // Target velocity (dash overrides speed along the dash direction)
