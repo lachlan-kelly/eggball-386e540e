@@ -1276,17 +1276,26 @@ function EggballPage() {
 
   const equipItem = (kind: EquipKind, id: string) => {
     setShop((prev) => {
-      let next = { ...prev, [kind]: id } as ShopState;
-      // Don't allow the same ability in both slots — swap instead.
-      if (kind === "abilityQ" && next.abilityE === id) next = { ...next, abilityE: prev.abilityQ };
-      if (kind === "abilityE" && next.abilityQ === id) next = { ...next, abilityQ: prev.abilityE };
+      const next = { ...prev, [kind]: id } as ShopState;
       shopRef.current = next;
       saveShop(next);
       return next;
     });
   };
 
-  const AbilityDial = ({ slot, id, frac, armed }: { slot: string; id: string; frac: number; armed: boolean }) => {
+  const claimQuest = (scope: "daily" | "weekly", questId: string, reward: number) => {
+    setQuests((prev) => {
+      const board = prev[scope];
+      if (board.claimed.includes(questId)) return prev;
+      const next = { ...prev, [scope]: { ...board, claimed: [...board.claimed, questId] } };
+      questsRef.current = next;
+      saveQuests(next);
+      return next;
+    });
+    addMoneyRef.current(reward);
+  };
+
+  const AbilityDial = ({ id, frac, armed, roll }: { id: string; frac: number; armed: boolean; roll: number }) => {
     const ability = ABILITIES.find((a) => a.id === id);
     if (!ability) return null;
     const R = 26;
@@ -1316,15 +1325,19 @@ function EggballPage() {
         >
           {ability.icon}
         </div>
-        <span className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-neutral-700 text-[11px] font-bold flex items-center justify-center">
-          {slot}
+        <span className="absolute -bottom-1 -right-1 h-5 px-1 rounded-full bg-neutral-700 text-[11px] font-bold flex items-center justify-center">
+          Q/E
         </span>
+        {roll > 0 && (
+          <span className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-yellow-400 text-black text-xs font-black flex items-center justify-center">
+            {roll}
+          </span>
+        )}
       </div>
     );
   };
 
   return (
-
     <div className="h-screen w-screen bg-neutral-900 text-white flex flex-col items-center overflow-hidden">
       <div className="flex items-center gap-6 text-2xl font-bold py-2 shrink-0">
         <span className="text-red-400">RED {score.red}</span>
@@ -1340,13 +1353,27 @@ function EggballPage() {
         )}
         {joined && (
           <button
-            onClick={() => setShopOpen(true)}
+            onClick={() => {
+              setQuestsOpen(false);
+              setShopOpen(true);
+            }}
             className="px-3 py-1 rounded-md bg-yellow-500 hover:bg-yellow-400 text-black text-sm font-bold"
           >
             Shop
           </button>
         )}
-        <span className="text-sm font-bold text-yellow-400">${shop.money}</span>
+        {joined && (
+          <button
+            onClick={() => {
+              setShopOpen(false);
+              setQuestsOpen(true);
+            }}
+            className="px-3 py-1 rounded-md bg-emerald-500 hover:bg-emerald-400 text-black text-sm font-bold"
+          >
+            Quests
+          </button>
+        )}
+        <span className="text-sm font-bold text-yellow-400">${shop.money.toLocaleString()}</span>
       </div>
       <div
         className="relative"
@@ -1361,10 +1388,9 @@ function EggballPage() {
           height={CANVAS_H}
           style={{ width: "100%", height: "100%", display: "block", borderRadius: 8 }}
         />
-        {joined && !shopOpen && !showMenu && (
+        {joined && !shopOpen && !questsOpen && !showMenu && (
           <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-4">
-            <AbilityDial slot="Q" id={shop.abilityQ} frac={abilityUi.q} armed={abilityUi.qArmed} />
-            <AbilityDial slot="E" id={shop.abilityE} frac={abilityUi.e} armed={abilityUi.eArmed} />
+            <AbilityDial id={shop.ability} frac={abilityUi.frac} armed={abilityUi.armed} roll={abilityUi.roll} />
           </div>
         )}
 
@@ -1373,15 +1399,24 @@ function EggballPage() {
             shop={shop}
             onBuy={buyItem}
             onEquip={equipItem}
+            onPreviewAnthem={(a) => playAnthemRef.current(a)}
             onClose={() => setShopOpen(false)}
           />
         )}
-        {showMenu && !shopOpen && (
+        {questsOpen && !shopOpen && (
+          <QuestsPanel
+            quests={quests}
+            money={shop.money}
+            onClaim={claimQuest}
+            onClose={() => setQuestsOpen(false)}
+          />
+        )}
+        {showMenu && !shopOpen && !questsOpen && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/70 rounded-lg">
             <div className="bg-neutral-800 rounded-xl p-8 shadow-2xl text-center max-w-sm">
               <h1 className="text-3xl font-bold mb-2">Eggball</h1>
               <p className="text-neutral-400 mb-4 text-sm">
-                Pick a team to jump in. WASD/arrows to move. X or Space to kick.
+                Pick a team to jump in. WASD/arrows to move. X or Space to kick. Q or E for your ability.
               </p>
               <input
                 type="text"
@@ -1423,4 +1458,5 @@ function EggballPage() {
     </div>
   );
 }
+
 
