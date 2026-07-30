@@ -178,6 +178,34 @@ function EggballPage() {
     };
   }, []);
 
+  // Quests: load, keep fresh, and expose a progress bumper to the game loop
+  useEffect(() => {
+    const fresh = refreshQuests(loadQuests());
+    questsRef.current = fresh;
+    setQuests(fresh);
+    saveQuests(fresh);
+    const iv = window.setInterval(() => {
+      setQuests((prev) => {
+        const next = refreshQuests(prev);
+        if (next === prev) return prev;
+        questsRef.current = next;
+        saveQuests(next);
+        return next;
+      });
+    }, 30000);
+    return () => window.clearInterval(iv);
+  }, []);
+  useEffect(() => {
+    bumpQuestRef.current = (metric: QuestMetric, amount = 1) => {
+      setQuests((prev) => {
+        const next = addProgress(prev, metric, amount);
+        questsRef.current = next;
+        saveQuests(next);
+        return next;
+      });
+    };
+  }, []);
+
   useEffect(() => {
     teamRef.current = team;
   }, [team]);
