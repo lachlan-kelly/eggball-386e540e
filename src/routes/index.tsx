@@ -793,17 +793,38 @@ function EggballPage() {
             const nx = bdx / bd;
             const ny = bdy / bd;
             const powered = myCharge >= 1;
-            const power = KICK_POWER * (powered ? POWER_MULT : 1);
+            // Gamble: a loaded roll (1..10) scales this one kick. 1 = no boost.
+            let gambleMult = 1;
+            if ((me.gambleUntil ?? 0) > now) {
+              const roll = me.gambleRoll ?? 1;
+              gambleMult = 1 + ((roll - 1) / 9) * (GAMBLE_MAX_MULT - 1);
+              me.gambleUntil = 0;
+              playTone(220 + roll * 80, 0.24, "sawtooth", 0.18, 120);
+              for (let i = 0; i < roll * 3; i++) {
+                const a = Math.random() * Math.PI * 2;
+                particles.push({ x: ball.x, y: ball.y, vx: Math.cos(a) * 180, vy: Math.sin(a) * 180, life: 0.5, maxLife: 0.5, color: "#facc15", size: 3 });
+              }
+            }
+            const power = KICK_POWER * (powered ? POWER_MULT : 1) * gambleMult;
             const nvx = nx * power;
             const nvy = ny * power;
-            // Curl: if armed, bend the shot toward the direction we're running.
+            // Curl: bends AWAY first, then swings back inward toward the goal
+            // we're attacking.
             let spin = 0;
+            let curlIn = 0;
             if ((me.curlUntil ?? 0) > now) {
               const mdx = me.lastDirX;
               const mdy = me.lastDirY;
-              const cross = nx * mdy - ny * mdx; // >0 = curl clockwise
-              const sign = cross === 0 ? 1 : Math.sign(cross);
-              spin = sign * CURL_RATE * (0.55 + Math.min(1, Math.abs(cross)) * 0.45);
+              const cross = nx * mdy - ny * mdx; // >0 = clockwise bend
+              const outSign = cross === 0 ? 1 : Math.sign(cross);
+              // Inward = the rotation that turns the shot toward the goal mouth.
+              const goalX = me.team === "red" ? FIELD_W : 0;
+              const goalY = FIELD_H / 2;
+              const gx = goalX - ball.x;
+              const gy = goalY - ball.y;
+              const toGoal = nx * gy - ny * gx;
+              curlIn = toGoal === 0 ? -outSign : Math.sign(toGoal);
+              spin = outSign * CURL_RATE;
               me.curlUntil = 0;
               playTone(760, 0.25, "sine", 0.14, 380);
               for (let i = 0; i < 14; i++) {
@@ -813,6 +834,7 @@ function EggballPage() {
             }
             if (powered) {
               sfxPower();
+              bumpQuestRef.current("powerKicks");
               for (let i = 0; i < 18; i++) {
                 const a = Math.atan2(ny, nx) + (Math.random() - 0.5) * 1.2;
                 const sp = 80 + Math.random() * 200;
@@ -822,16 +844,25 @@ function EggballPage() {
             } else {
               sfxKick();
             }
+            bumpQuestRef.current("kicks");
             myCharge = 0;
             me.charge = 0;
+            me.dribbleUntil = 0;
+            const flipAt = spin ? now + CURL_OUT_TIME * 1000 : 0;
             if (hostId === myId) {
               ball.vx = nvx;
               ball.vy = nvy;
               ball.spin = spin;
+              ball.curlFlipAt = flipAt;
+              ball.curlIn = curlIn;
               ballKickedAt = now;
               lastTouchId = myId;
             } else {
-              channel.send({ type: "broadcast", event: "kick", payload: { bx: ball.x, by: ball.y, bvx: nvx, bvy: nvy, id: myId, spin } });
+              channel.send({
+                type: "broadcast",
+                event: "kick",
+                payload: { bx: ball.x, by: ball.y, bvx: nvx, bvy: nvy, id: myId, spin, curlIn, flipMs: spin ? CURL_OUT_TIME * 1000 : 0 },
+              });
             }
           }
         }
