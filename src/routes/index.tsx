@@ -1127,7 +1127,22 @@ function EggballPage() {
         ctx.stroke();
         ctx.restore();
       }
+      // Black hole goal explosion: swirling void that drags everyone in
+      if (blackholeUntil > now) {
+        const bt = Math.max(0, (blackholeUntil - now) / (BLACKHOLE_TIME * 1000));
+        const rad = 80 * Math.sin(Math.min(1, bt) * Math.PI) + 16;
+        const grad = ctx.createRadialGradient(blackholeX, blackholeY, 2, blackholeX, blackholeY, rad);
+        grad.addColorStop(0, "#000000");
+        grad.addColorStop(0.65, "rgba(59,26,92,0.9)");
+        grad.addColorStop(1, "rgba(155,93,229,0)");
+        ctx.beginPath();
+        ctx.arc(blackholeX, blackholeY, rad, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
+      }
+
       // Ball
+
 
       ctx.beginPath();
       ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
