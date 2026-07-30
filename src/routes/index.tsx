@@ -244,6 +244,40 @@ function EggballPage() {
   const sfxWhistle = () => playTone(1400, 0.35, "triangle", 0.15, 1800);
   const sfxPost = () => playTone(180, 0.06, "square", 0.15);
   const sfxPower = () => { playTone(160, 0.22, "sawtooth", 0.22, 60); playTone(520, 0.18, "square", 0.14, 90); };
+  const sfxAbility = () => playTone(700, 0.12, "triangle", 0.14, 1200);
+  const sfxRewind = () => playTone(900, 0.5, "sine", 0.16, 180);
+
+  // Goal anthems: play an uploaded audio file when the item has one, otherwise
+  // synthesize the item's melody.
+  const anthemAudioRef = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => {
+    playAnthemRef.current = (a?: AnthemItem) => {
+      try {
+        anthemAudioRef.current?.pause();
+      } catch {}
+      if (!a) return;
+      if (a.url) {
+        const el = new Audio(a.url);
+        el.volume = 0.55;
+        anthemAudioRef.current = el;
+        void el.play().catch(() => {});
+        window.setTimeout(() => {
+          try {
+            el.pause();
+          } catch {}
+        }, 2600);
+        return;
+      }
+      if (!a.melody) return;
+      let t = 0;
+      for (const [freq, dur] of a.melody) {
+        window.setTimeout(() => playTone(freq, dur, a.wave ?? "square", 0.16), t * 1000);
+        t += dur;
+      }
+    };
+  }, []);
+
+
 
   useEffect(() => {
     const myId = myIdRef.current;
