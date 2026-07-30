@@ -713,14 +713,36 @@ function EggballPage() {
           lastTouchId = p.id;
         }
 
-        // Curl spin: rotate the velocity vector, decaying over ~1s
+        // Black hole goal explosion: drags every player (and the ball) inward
+        if (blackhole.until > now) {
+          const pull = (o: { x: number; y: number; vx: number; vy: number }) => {
+            const dx = blackhole.x - o.x;
+            const dy = blackhole.y - o.y;
+            const d = Math.hypot(dx, dy) || 1;
+            o.vx += (dx / d) * BLACKHOLE_PULL * dt;
+            o.vy += (dy / d) * BLACKHOLE_PULL * dt;
+          };
+          pull(ball);
+          for (const p of players.values()) pull(p);
+        }
+
+        // Curl spin: two-phase — bends outward first, then swings back inward
+        // toward the goal the kicker is attacking.
         if (ball.spin) {
+          if (ball.curlFlipAt && now >= ball.curlFlipAt) {
+            ball.spin = -Math.abs(ball.spin) * Math.sign(ball.curlIn || 1) * -1;
+            ball.spin = Math.abs(ball.spin) * (ball.curlIn || 1);
+            ball.curlFlipAt = 0;
+          }
           const ang = Math.atan2(ball.vy, ball.vx) + ball.spin * dt;
           const sp2 = Math.hypot(ball.vx, ball.vy);
           ball.vx = Math.cos(ang) * sp2;
           ball.vy = Math.sin(ang) * sp2;
-          ball.spin *= Math.pow(0.975, dt * 60);
-          if (Math.abs(ball.spin) < 0.05) ball.spin = 0;
+          ball.spin *= Math.pow(0.988, dt * 60);
+          if (Math.abs(ball.spin) < 0.05) {
+            ball.spin = 0;
+            ball.curlFlipAt = 0;
+          }
         }
 
         // Apply friction
