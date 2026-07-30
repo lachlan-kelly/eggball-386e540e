@@ -43,11 +43,22 @@ const POWER_MULT = 2.5;
 // Abilities
 const DASH_SPEED = 640;
 const DASH_TIME = 0.18;
-const MAGNET_RANGE = 380;
+const MAGNET_RANGE = 230;
 const MAGNET_TIME = 1.0;
 const MAGNET_ACCEL = 2000;
 const CURL_WINDOW = 5; // seconds to land the curled kick
 const CURL_RATE = 3.6; // rad/sec of velocity rotation at full spin
+const CURL_OUT_TIME = 0.34; // seconds bending away from goal before swinging back
+const CURL_LIFE = 1.7; // total seconds the curl acts on the ball
+const DRIBBLE_SPEED = 400;
+const DRIBBLE_TIME = 0.7;
+const GAMBLE_WINDOW = 8; // seconds to use the rolled kick
+const GAMBLE_MAX_MULT = 4.5; // roll of 10 = full-field shot
+const DEBUG_GLITCH = 1.1; // seconds of glitching before the teleport
+const REWIND_SECONDS = 3;
+const HISTORY_STEP = 100; // ms between rewind snapshots
+const BLACKHOLE_TIME = 1.6;
+const BLACKHOLE_PULL = 900;
 
 type Team = "red" | "blue" | null;
 
