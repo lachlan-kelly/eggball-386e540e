@@ -1312,25 +1312,7 @@ function EggballPage() {
           ctx.globalAlpha = 0.4 + Math.random() * 0.5;
           ctx.translate((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14);
         }
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI * 2);
-        ctx.fillStyle = skin.color || teamColor;
-        ctx.fill();
-        if (skin.flag) {
-          ctx.clip();
-          const bands = skin.flag.colors;
-          const n = bands.length;
-          for (let i = 0; i < n; i++) {
-            ctx.fillStyle = bands[i];
-            if (skin.flag.vertical) {
-              ctx.fillRect(p.x - PLAYER_R + (i * PLAYER_R * 2) / n, p.y - PLAYER_R, (PLAYER_R * 2) / n + 1, PLAYER_R * 2);
-            } else {
-              ctx.fillRect(p.x - PLAYER_R, p.y - PLAYER_R + (i * PLAYER_R * 2) / n, PLAYER_R * 2, (PLAYER_R * 2) / n + 1);
-            }
-          }
-        }
-        ctx.restore();
+        drawSkin(ctx, p.x, p.y, PLAYER_R, { color: skin.color || teamColor, flag: skin.flag });
         // Curl armed: subtle spinning aura
         if ((p.curlUntil ?? 0) > now) {
           ctx.beginPath();
@@ -1350,14 +1332,22 @@ function EggballPage() {
           ctx.stroke();
           ctx.restore();
         }
-        // Dribbling: trailing streak
-        if ((p.dribbleUntil ?? 0) > now) {
+        // Bumper active: pulsing shield
+        if ((p.bumperUntil ?? 0) > now) {
+          ctx.save();
           ctx.beginPath();
-          ctx.arc(p.x, p.y, PLAYER_R + 4, 0, Math.PI * 2);
-          ctx.lineWidth = 3;
-          ctx.strokeStyle = "rgba(134,239,172,0.85)";
+          ctx.arc(p.x, p.y, PLAYER_R + 7 + Math.sin(now / 90) * 3, 0, Math.PI * 2);
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = "rgba(249,115,22,0.85)";
           ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, PLAYER_R + 12, 0, Math.PI * 2);
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = "rgba(249,115,22,0.35)";
+          ctx.stroke();
+          ctx.restore();
         }
+
         ctx.beginPath();
         ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI * 2);
         ctx.lineWidth = 3;
