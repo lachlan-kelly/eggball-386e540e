@@ -81,7 +81,7 @@ interface PlayerState {
   magnetUntil?: number; // timestamp ms while the magnet is pulling
   curlUntil?: number; // timestamp ms while curl is armed
   dashUntil?: number; // timestamp ms while dashing
-  dribbleUntil?: number; // timestamp ms while dribbling (ball travels with you)
+  bumperUntil?: number; // timestamp ms while Bumper auto-power-kicks on contact
   gambleUntil?: number; // timestamp ms while a gamble roll is loaded
   gambleRoll?: number; // 1..10 rolled kick power
   glitchUntil?: number; // timestamp ms while the Debug glitch plays
@@ -95,6 +95,8 @@ interface BallState {
   spin?: number; // curl: rad/sec applied to the velocity direction
   curlFlipAt?: number; // timestamp ms when the curl swings back inward
   curlIn?: number; // sign of the inward (goal-bound) curl
+  curlUntil?: number; // timestamp ms the curl stops acting
+  freezeUntil?: number; // timestamp ms while the ball is frozen in place
 }
 
 interface Snapshot {
