@@ -891,7 +891,13 @@ function EggballPage() {
       }
 
       // Host-only: ball physics
-      if (hostId === myId && countdown <= 0 && !ended && celebrate <= 0) {
+      const ballFrozen = (ball.freezeUntil ?? 0) > now;
+      if (hostId === myId && countdown <= 0 && !ended && celebrate <= 0 && ballFrozen) {
+        ball.vx = 0;
+        ball.vy = 0;
+        ball.spin = 0;
+      }
+      if (hostId === myId && countdown <= 0 && !ended && celebrate <= 0 && !ballFrozen) {
         // Magnet: any player with an active magnet drags the ball toward them.
         for (const p of players.values()) {
           if (!p.magnetUntil || p.magnetUntil < now) continue;
@@ -924,22 +930,27 @@ function EggballPage() {
           for (const p of players.values()) pull(p);
         }
 
-        // Curl spin: two-phase — bends outward first, then swings back inward
-        // toward the goal the kicker is attacking.
+        // Curl spin: bends outward first, then swings back inward toward the goal
+        // the kicker was attacking. The direction is locked in at kick time and
+        // never re-evaluated, and the whole effect expires after CURL_LIFE.
         if (ball.spin) {
-          if (ball.curlFlipAt && now >= ball.curlFlipAt) {
-            ball.spin = -Math.abs(ball.spin) * Math.sign(ball.curlIn || 1) * -1;
-            ball.spin = Math.abs(ball.spin) * (ball.curlIn || 1);
-            ball.curlFlipAt = 0;
-          }
-          const ang = Math.atan2(ball.vy, ball.vx) + ball.spin * dt;
-          const sp2 = Math.hypot(ball.vx, ball.vy);
-          ball.vx = Math.cos(ang) * sp2;
-          ball.vy = Math.sin(ang) * sp2;
-          ball.spin *= Math.pow(0.988, dt * 60);
-          if (Math.abs(ball.spin) < 0.05) {
+          if ((ball.curlUntil ?? 0) <= now) {
             ball.spin = 0;
             ball.curlFlipAt = 0;
+          } else {
+            if (ball.curlFlipAt && now >= ball.curlFlipAt) {
+              ball.spin = Math.abs(ball.spin) * (ball.curlIn || 1);
+              ball.curlFlipAt = 0;
+            }
+            const ang = Math.atan2(ball.vy, ball.vx) + ball.spin * dt;
+            const sp2 = Math.hypot(ball.vx, ball.vy);
+            ball.vx = Math.cos(ang) * sp2;
+            ball.vy = Math.sin(ang) * sp2;
+            ball.spin *= Math.pow(0.985, dt * 60);
+            if (Math.abs(ball.spin) < 0.05) {
+              ball.spin = 0;
+              ball.curlFlipAt = 0;
+            }
           }
         }
 
@@ -954,6 +965,7 @@ function EggballPage() {
         }
         ball.x += ball.vx * dt;
         ball.y += ball.vy * dt;
+
 
 
         // Wall collision - but goal openings on left/right.
