@@ -684,6 +684,86 @@ function EggballPage() {
         if (goalCooldown > 0) goalCooldown = Math.max(0, goalCooldown - dt);
       }
 
+      // Smooth remote players toward their last received network position.
+      for (const [id, t] of targets) {
+        const p = players.get(id);
+        if (!p || id === myId) continue;
+        const k = Math.min(1, dt * 14);
+        p.x += (t.x - p.x) * k;
+        p.y += (t.y - p.y) * k;
+      }
+      // Non-hosts smooth the ball toward the host's authoritative position.
+      if (hostId !== myId) {
+        const k = Math.min(1, dt * 16);
+        ball.x += (ballTarget.x - ball.x) * k;
+        ball.y += (ballTarget.y - ball.y) * k;
+      }
+
+      // Host-only: run a bot on any team that has no human players.
+      if (hostId === myId && !ended) {
+        botTick += dt;
+        for (const team of ["red", "blue"] as const) {
+          const botId = `bot-${team}`;
+          const humans = [...players.values()].some((p) => p.team === team && !p.id.startsWith("bot-"));
+          const otherHumans = [...players.values()].some((p) => p.team !== team && !p.id.startsWith("bot-"));
+          if (humans || !otherHumans) {
+            players.delete(botId);
+            continue;
+          }
+          let bot = players.get(botId);
+          if (!bot) {
+            bot = {
+              id: botId,
+              team,
+              x: team === "red" ? FIELD_W * 0.25 : FIELD_W * 0.75,
+              y: FIELD_H / 2,
+              vx: 0,
+              vy: 0,
+              kickUntil: 0,
+              lastDirX: team === "red" ? 1 : -1,
+              lastDirY: 0,
+              name: "Bot",
+              ability: Math.random() < 0.5 ? "dash" : "magnet",
+            };
+            players.set(botId, bot);
+          }
+          if (countdown > 0 || celebrate > 0) continue;
+          const goalX = team === "red" ? FIELD_W : 0;
+          // Line up behind the ball relative to the goal it attacks.
+          const aimX = ball.x + (ball.x - goalX > 0 ? -1 : 1) * 0;
+          const dx = aimX - bot.x;
+          const dy = ball.y - bot.y;
+          const d = Math.hypot(dx, dy) || 1;
+          const nx = dx / d;
+          const ny = dy / d;
+          bot.vx = nx * PLAYER_SPEED * 0.92;
+          bot.vy = ny * PLAYER_SPEED * 0.92;
+          bot.lastDirX = nx;
+          bot.lastDirY = ny;
+          bot.x += bot.vx * dt;
+          bot.y += bot.vy * dt;
+          // Kick when touching the ball, aiming at the goal.
+          if (d < PLAYER_R + BALL_R + KICK_REACH) {
+            const gx = goalX - ball.x;
+            const gy = FIELD_H / 2 - ball.y;
+            const gl = Math.hypot(gx, gy) || 1;
+            ball.vx = (gx / gl) * KICK_POWER;
+            ball.vy = (gy / gl) * KICK_POWER;
+            ball.freezeUntil = 0;
+            bot.kickUntil = now + KICK_DURATION * 1000;
+            lastTouchId = botId;
+          }
+          // Occasionally fire its one ability.
+          if (now > botAbilityAt && d < MAGNET_RANGE) {
+            botAbilityAt = now + 4000 + Math.random() * 4000;
+            if (bot.ability === "dash") bot.dashUntil = now + DASH_TIME * 1000;
+            else bot.magnetUntil = now + MAGNET_TIME * 1000;
+          }
+          if (botTick > 0.05) channel.send({ type: "broadcast", event: "player", payload: { ...bot } });
+        }
+        if (botTick > 0.05) botTick = 0;
+      }
+
 
       // Move my player
       const me = getMyPlayer();
