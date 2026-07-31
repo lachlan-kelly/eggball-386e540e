@@ -1633,41 +1633,64 @@ function EggballPage() {
 
   return (
     <div className="h-screen w-screen bg-neutral-900 text-white flex flex-col items-center overflow-hidden">
-      <div className="flex items-center gap-6 text-2xl font-bold py-2 shrink-0">
-        <span className="text-red-400">RED {score.red}</span>
-        <span className="text-neutral-300 text-lg tabular-nums">{mm}:{ss}</span>
-        <span className="text-blue-400">{score.blue} BLUE</span>
-        {joined && (
-          <button
-            onClick={() => setMenuOpen(true)}
-            className="ml-4 px-3 py-1 rounded-md bg-neutral-700 hover:bg-neutral-600 text-sm font-semibold"
-          >
-            Teams
-          </button>
-        )}
-        {joined && (
-          <button
-            onClick={() => {
-              setQuestsOpen(false);
-              setShopOpen(true);
-            }}
-            className="px-3 py-1 rounded-md bg-yellow-500 hover:bg-yellow-400 text-black text-sm font-bold"
-          >
-            Shop
-          </button>
-        )}
-        {joined && (
+      <div className="w-full grid grid-cols-3 items-center px-4 py-2 shrink-0">
+        {/* Left buttons */}
+        <div className="flex items-center gap-2 justify-start">
+          {joined && (
+            <button
+              onClick={() => setMenuOpen(true)}
+              className="px-3 py-1 rounded-md bg-neutral-700 hover:bg-neutral-600 text-sm font-semibold"
+            >
+              Teams
+            </button>
+          )}
+          {joined && (
+            <button
+              onClick={() => {
+                setQuestsOpen(false);
+                setLogOpen(false);
+                setShopOpen(true);
+              }}
+              className="px-3 py-1 rounded-md bg-yellow-500 hover:bg-yellow-400 text-black text-sm font-bold"
+            >
+              Shop
+            </button>
+          )}
+        </div>
+        {/* Centre scoreboard */}
+        <div className="flex items-center justify-center gap-6 text-2xl font-bold">
+          <span className="text-red-400">RED {score.red}</span>
+          <span className="text-neutral-300 text-lg tabular-nums">
+            {mm}:{ss}
+          </span>
+          <span className="text-blue-400">{score.blue} BLUE</span>
+        </div>
+        {/* Right buttons */}
+        <div className="flex items-center gap-2 justify-end">
+          <span className="text-sm font-bold text-yellow-400">${shop.money.toLocaleString()}</span>
+          {joined && (
+            <button
+              onClick={() => {
+                setShopOpen(false);
+                setLogOpen(false);
+                setQuestsOpen(true);
+              }}
+              className="px-3 py-1 rounded-md bg-emerald-500 hover:bg-emerald-400 text-black text-sm font-bold"
+            >
+              Quests
+            </button>
+          )}
           <button
             onClick={() => {
               setShopOpen(false);
-              setQuestsOpen(true);
+              setQuestsOpen(false);
+              setLogOpen(true);
             }}
-            className="px-3 py-1 rounded-md bg-emerald-500 hover:bg-emerald-400 text-black text-sm font-bold"
+            className="px-3 py-1 rounded-md bg-neutral-700 hover:bg-neutral-600 text-sm font-semibold"
           >
-            Quests
+            Updates
           </button>
-        )}
-        <span className="text-sm font-bold text-yellow-400">${shop.money.toLocaleString()}</span>
+        </div>
       </div>
       <div
         className="relative"
@@ -1682,7 +1705,7 @@ function EggballPage() {
           height={CANVAS_H}
           style={{ width: "100%", height: "100%", display: "block", borderRadius: 8 }}
         />
-        {joined && !shopOpen && !questsOpen && !showMenu && (
+        {joined && !shopOpen && !questsOpen && !logOpen && !showMenu && (
           <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-4">
             <AbilityDial id={shop.ability} frac={abilityUi.frac} armed={abilityUi.armed} roll={abilityUi.roll} />
           </div>
@@ -1705,6 +1728,8 @@ function EggballPage() {
             onClose={() => setQuestsOpen(false)}
           />
         )}
+        {logOpen && !shopOpen && !questsOpen && <UpdateLogPanel onClose={() => setLogOpen(false)} />}
+
         {showMenu && !shopOpen && !questsOpen && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/70 rounded-lg">
             <div className="bg-neutral-800 rounded-xl p-8 shadow-2xl text-center max-w-sm">
