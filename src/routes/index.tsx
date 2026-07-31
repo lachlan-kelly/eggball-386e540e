@@ -657,7 +657,7 @@ function EggballPage() {
               } else {
                 channel.send({ type: "broadcast", event: "freeze", payload: { until } });
               }
-              localFreezeUntil = until;
+              ball.freezeUntil = until;
               playTone(1200, 0.35, "sine", 0.14, 300);
               for (let i = 0; i < 24; i++) {
                 const a = Math.random() * Math.PI * 2;
