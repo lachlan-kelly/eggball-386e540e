@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { drawSkin } from "@/lib/flags";
 import {
   ABILITIES,
   ANTHEMS,
@@ -21,22 +22,22 @@ function priceLabel(list: number) {
 }
 
 function SkinPreview({ skin }: { skin: SkinItem }) {
-  const base = skin.color || "#e23c3c";
-  return (
-    <div
-      className="h-12 w-12 rounded-full border-2 border-black/70 overflow-hidden shrink-0"
-      style={{ background: base }}
-    >
-      {skin.flag && (
-        <div className={`h-full w-full flex ${skin.flag.vertical ? "flex-row" : "flex-col"}`}>
-          {skin.flag.colors.map((c, i) => (
-            <div key={i} className="flex-1" style={{ background: c }} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
+  const ref = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    const c = ref.current;
+    const ctx = c?.getContext("2d");
+    if (!c || !ctx) return;
+    ctx.clearRect(0, 0, c.width, c.height);
+    drawSkin(ctx, 48, 48, 46, skin);
+    ctx.beginPath();
+    ctx.arc(48, 48, 46, 0, Math.PI * 2);
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = "rgba(0,0,0,0.8)";
+    ctx.stroke();
+  }, [skin]);
+  return <canvas ref={ref} width={96} height={96} className="h-12 w-12 shrink-0" />;
 }
+
 
 function ExplosionPreview({ item }: { item: ExplosionItem }) {
   return (

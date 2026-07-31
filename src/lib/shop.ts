@@ -6,6 +6,8 @@ export function effectivePrice(listPrice: number) {
   return FREE_MODE ? 0 : listPrice;
 }
 
+import type { FlagSpec } from "./flags";
+
 export interface SkinItem {
   id: string;
   name: string;
@@ -13,8 +15,8 @@ export interface SkinItem {
   price: number;
   /** Solid base colour of the ball */
   color: string;
-  /** Optional flag stripes drawn over the ball */
-  flag?: { colors: string[]; vertical?: boolean };
+  /** Optional flag design drawn over the ball */
+  flag?: FlagSpec;
 }
 
 export interface ExplosionItem {
@@ -35,13 +37,58 @@ export const SKINS: SkinItem[] = [
   { id: "gold", name: "Gold", price: 4500, color: "#ffcc33" },
   { id: "midnight", name: "Midnight", price: 2200, color: "#1b1f3b" },
   { id: "bubblegum", name: "Bubblegum", price: 1600, color: "#ff7ac6" },
-  { id: "flag-au", name: "Australia", price: 2800, color: "#00247d", flag: { colors: ["#00247d", "#ffffff", "#cf142b"] } },
-  { id: "flag-fr", name: "France", price: 2800, color: "#0055a4", flag: { colors: ["#0055a4", "#ffffff", "#ef4135"], vertical: true } },
-  { id: "flag-it", name: "Italy", price: 2800, color: "#008c45", flag: { colors: ["#008c45", "#f4f5f0", "#cd212a"], vertical: true } },
-  { id: "flag-de", name: "Germany", price: 2800, color: "#000000", flag: { colors: ["#000000", "#dd0000", "#ffce00"] } },
-  { id: "flag-jp", name: "Japan", price: 3200, color: "#ffffff", flag: { colors: ["#ffffff", "#bc002d", "#ffffff"] } },
-  { id: "flag-br", name: "Brazil", price: 3200, color: "#009c3b", flag: { colors: ["#009c3b", "#ffdf00", "#009c3b"] } },
+  { id: "ocean", name: "Ocean", price: 1200, color: "#1e88c7" },
+  { id: "lava", name: "Lava", price: 1800, color: "#d92b1c" },
+  { id: "slime", name: "Slime", price: 1400, color: "#8ddc3d" },
+  { id: "ice", name: "Ice", price: 1600, color: "#bfefff" },
+  { id: "void", name: "Void", price: 5200, color: "#0b0b12" },
+  { id: "peach", name: "Peach", price: 1100, color: "#ffb59b" },
+  { id: "cyber", name: "Cyber", price: 4800, color: "#00e5ff" },
+  { id: "rose", name: "Rose", price: 1700, color: "#e8436f" },
+  { id: "steel", name: "Steel", price: 2000, color: "#8a97a8" },
+  { id: "emerald", name: "Emerald", price: 3000, color: "#0f9d58" },
+  { id: "copper", name: "Copper", price: 2600, color: "#b87333" },
+  { id: "neon", name: "Neon", price: 5000, color: "#c6ff00" },
+  { id: "sand", name: "Sand", price: 900, color: "#e4c98a" },
+  // ---- Country skins ----
+  { id: "flag-au", name: "Australia", price: 2800, color: "#00247d", flag: { type: "canton", colors: ["#00247d", "#00247d"], accent: "#00247d", accent2: "#ffffff" } },
+  { id: "flag-nz", name: "New Zealand", price: 2800, color: "#00247d", flag: { type: "canton", colors: ["#00247d", "#00247d"], accent: "#00247d", accent2: "#cc142b" } },
+  { id: "flag-us", name: "United States", price: 3000, color: "#b22234", flag: { type: "canton", colors: ["#b22234", "#ffffff", "#b22234", "#ffffff", "#b22234", "#ffffff"], accent: "#3c3b6e", accent2: "#ffffff" } },
+  { id: "flag-gb", name: "United Kingdom", price: 3000, color: "#00247d", flag: { type: "cross", colors: ["#00247d"], accent: "#cf142b", accent2: "#ffffff" } },
+  { id: "flag-fr", name: "France", price: 2800, color: "#0055a4", flag: { type: "vbands", colors: ["#0055a4", "#ffffff", "#ef4135"] } },
+  { id: "flag-it", name: "Italy", price: 2800, color: "#008c45", flag: { type: "vbands", colors: ["#008c45", "#f4f5f0", "#cd212a"] } },
+  { id: "flag-ie", name: "Ireland", price: 2800, color: "#169b62", flag: { type: "vbands", colors: ["#169b62", "#ffffff", "#ff883e"] } },
+  { id: "flag-be", name: "Belgium", price: 2800, color: "#000000", flag: { type: "vbands", colors: ["#000000", "#fdda24", "#ef3340"] } },
+  { id: "flag-ro", name: "Romania", price: 2800, color: "#002b7f", flag: { type: "vbands", colors: ["#002b7f", "#fcd116", "#ce1126"] } },
+  { id: "flag-de", name: "Germany", price: 2800, color: "#000000", flag: { type: "bands", colors: ["#000000", "#dd0000", "#ffce00"] } },
+  { id: "flag-nl", name: "Netherlands", price: 2800, color: "#ae1c28", flag: { type: "bands", colors: ["#ae1c28", "#ffffff", "#21468b"] } },
+  { id: "flag-ru", name: "Russia", price: 2800, color: "#ffffff", flag: { type: "bands", colors: ["#ffffff", "#0039a6", "#d52b1e"] } },
+  { id: "flag-es", name: "Spain", price: 2800, color: "#aa151b", flag: { type: "bands", colors: ["#aa151b", "#f1bf00", "#f1bf00", "#aa151b"] } },
+  { id: "flag-pt", name: "Portugal", price: 2800, color: "#046a38", flag: { type: "vbands", colors: ["#046a38", "#046a38", "#da291c", "#da291c", "#da291c"] } },
+  { id: "flag-pl", name: "Poland", price: 2600, color: "#ffffff", flag: { type: "bands", colors: ["#ffffff", "#dc143c"] } },
+  { id: "flag-ua", name: "Ukraine", price: 2600, color: "#0057b7", flag: { type: "bands", colors: ["#0057b7", "#ffd700"] } },
+  { id: "flag-id", name: "Indonesia", price: 2600, color: "#ce1126", flag: { type: "bands", colors: ["#ce1126", "#ffffff"] } },
+  { id: "flag-ar", name: "Argentina", price: 3200, color: "#74acdf", flag: { type: "circle", colors: ["#74acdf", "#ffffff", "#74acdf"], accent: "#f6b40e" } },
+  { id: "flag-jp", name: "Japan", price: 3200, color: "#ffffff", flag: { type: "circle", colors: ["#ffffff"], accent: "#bc002d" } },
+  { id: "flag-bd", name: "Bangladesh", price: 2600, color: "#006a4e", flag: { type: "circle", colors: ["#006a4e"], accent: "#f42a41" } },
+  { id: "flag-in", name: "India", price: 3000, color: "#ff9933", flag: { type: "circle", colors: ["#ff9933", "#ffffff", "#138808"], accent: "#000080" } },
+  { id: "flag-kr", name: "South Korea", price: 3200, color: "#ffffff", flag: { type: "circle", colors: ["#ffffff"], accent: "#cd2e3a" } },
+  { id: "flag-br", name: "Brazil", price: 3200, color: "#009c3b", flag: { type: "diamond", colors: ["#009c3b"], accent: "#ffdf00", accent2: "#002776" } },
+  { id: "flag-se", name: "Sweden", price: 2800, color: "#006aa7", flag: { type: "cross", colors: ["#006aa7"], accent: "#fecc00" } },
+  { id: "flag-no", name: "Norway", price: 2800, color: "#ba0c2f", flag: { type: "cross", colors: ["#ba0c2f"], accent: "#00205b", accent2: "#ffffff" } },
+  { id: "flag-fi", name: "Finland", price: 2800, color: "#ffffff", flag: { type: "cross", colors: ["#ffffff"], accent: "#003580" } },
+  { id: "flag-dk", name: "Denmark", price: 2800, color: "#c60c30", flag: { type: "cross", colors: ["#c60c30"], accent: "#ffffff" } },
+  { id: "flag-is", name: "Iceland", price: 2800, color: "#02529c", flag: { type: "cross", colors: ["#02529c"], accent: "#dc1e35", accent2: "#ffffff" } },
+  { id: "flag-ch", name: "Switzerland", price: 2800, color: "#d52b1e", flag: { type: "cross", colors: ["#d52b1e"], accent: "#ffffff" } },
+  { id: "flag-gr", name: "Greece", price: 2800, color: "#0d5eaf", flag: { type: "bands", colors: ["#0d5eaf", "#ffffff", "#0d5eaf", "#ffffff", "#0d5eaf"] } },
+  { id: "flag-ng", name: "Nigeria", price: 2600, color: "#008751", flag: { type: "vbands", colors: ["#008751", "#ffffff", "#008751"] } },
+  { id: "flag-mx", name: "Mexico", price: 3000, color: "#006847", flag: { type: "vbands", colors: ["#006847", "#ffffff", "#ce1126"] } },
+  { id: "flag-ca", name: "Canada", price: 3000, color: "#ff0000", flag: { type: "vbands", colors: ["#ff0000", "#ffffff", "#ff0000"] } },
+  { id: "flag-tr", name: "Turkey", price: 2800, color: "#e30a17", flag: { type: "circle", colors: ["#e30a17"], accent: "#ffffff" } },
+  { id: "flag-cz", name: "Czechia", price: 2600, color: "#ffffff", flag: { type: "diagonal", colors: ["#ffffff", "#d7141a"] } },
+  { id: "flag-za", name: "South Africa", price: 3200, color: "#007a4d", flag: { type: "diagonal", colors: ["#007a4d", "#ffb612"] } },
 ];
+
 
 export const EXPLOSIONS: ExplosionItem[] = [
   { id: "none", name: "None", price: 0, kind: "shockwave", colors: ["#ffffff"] },
@@ -145,14 +192,24 @@ export const ABILITIES: AbilityItem[] = [
     cooldown: 5,
   },
   {
-    id: "dribble",
-    name: "Dribble",
+    id: "freeze",
+    name: "Freeze",
     price: 0,
     listPrice: 4000,
-    icon: "🏃",
-    description: "A shorter dash that carries the ball with you — opponents can knock it loose.",
-    cooldown: 7,
+    icon: "❄️",
+    description: "Freezes the ball solid in place for 2 seconds — nobody can move it.",
+    cooldown: 12,
   },
+  {
+    id: "bumper",
+    name: "Bumper",
+    price: 0,
+    listPrice: 11000,
+    icon: "🛡️",
+    description: "For 5 seconds any touch auto-blasts the ball with power-shot force.",
+    cooldown: 20,
+  },
+
   {
     id: "curl",
     name: "Curl",

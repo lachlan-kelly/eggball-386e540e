@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { ShopPanel } from "@/components/ShopPanel";
 import { QuestsPanel } from "@/components/QuestsPanel";
+import { UpdateLogPanel } from "@/components/UpdateLogPanel";
+import { drawSkin } from "@/lib/flags";
 import { ABILITIES, GOAL_REWARD, WIN_REWARD, getAbility, getAnthem, getExplosion, getSkin, loadShop, saveShop, DEFAULT_SHOP, type AnthemItem, type EquipKind, type ShopState } from "@/lib/shop";
 import { addProgress, defaultQuests, loadQuests, refreshQuests, saveQuests, type QuestMetric, type QuestState } from "@/lib/quests";
 
@@ -50,8 +52,9 @@ const CURL_WINDOW = 5; // seconds to land the curled kick
 const CURL_RATE = 3.6; // rad/sec of velocity rotation at full spin
 const CURL_OUT_TIME = 0.34; // seconds bending away from goal before swinging back
 const CURL_LIFE = 1.7; // total seconds the curl acts on the ball
-const DRIBBLE_SPEED = 400;
-const DRIBBLE_TIME = 0.7;
+const FREEZE_TIME = 1.6; // seconds the ball is locked in place
+const BUMPER_TIME = 5; // seconds of auto power-kick on contact
+const REWIND_FX_MS = 900; // duration of the rewind screen effect
 const GAMBLE_WINDOW = 8; // seconds to use the rolled kick
 const GAMBLE_MAX_MULT = 4.5; // roll of 10 = full-field shot
 const DEBUG_GLITCH = 1.1; // seconds of glitching before the teleport
@@ -81,7 +84,7 @@ interface PlayerState {
   magnetUntil?: number; // timestamp ms while the magnet is pulling
   curlUntil?: number; // timestamp ms while curl is armed
   dashUntil?: number; // timestamp ms while dashing
-  dribbleUntil?: number; // timestamp ms while dribbling (ball travels with you)
+  bumperUntil?: number; // timestamp ms while Bumper auto-power-kicks on contact
   gambleUntil?: number; // timestamp ms while a gamble roll is loaded
   gambleRoll?: number; // 1..10 rolled kick power
   glitchUntil?: number; // timestamp ms while the Debug glitch plays
@@ -95,6 +98,8 @@ interface BallState {
   spin?: number; // curl: rad/sec applied to the velocity direction
   curlFlipAt?: number; // timestamp ms when the curl swings back inward
   curlIn?: number; // sign of the inward (goal-bound) curl
+  curlUntil?: number; // timestamp ms the curl stops acting
+  freezeUntil?: number; // timestamp ms while the ball is frozen in place
 }
 
 interface Snapshot {
@@ -137,6 +142,7 @@ function EggballPage() {
   const [nameInput, setNameInput] = useState("");
   const [shopOpen, setShopOpen] = useState(false);
   const [questsOpen, setQuestsOpen] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
   const [shop, setShop] = useState<ShopState>(DEFAULT_SHOP);
   const [quests, setQuests] = useState<QuestState>(defaultQuests);
   const [score, setScore] = useState({ red: 0, blue: 0, timeLeft: GAME_LENGTH, countdown: 0, ended: false, winner: null as Team | "draw", intermission: 0 });
@@ -282,8 +288,15 @@ function EggballPage() {
   useEffect(() => {
     const myId = myIdRef.current;
     const players = new Map<string, PlayerState>();
+    /** Latest network positions for remote players; rendering lerps toward these. */
+    const targets = new Map<string, PlayerState>();
     const lastSeen = new Map<string, number>();
-    let ball: BallState = { x: FIELD_W / 2, y: FIELD_H / 2, vx: 0, vy: 0 };
+    const ball: BallState = { x: FIELD_W / 2, y: FIELD_H / 2, vx: 0, vy: 0 };
+    /** Host's authoritative ball position (non-hosts smooth toward it). */
+    const ballTarget = { x: FIELD_W / 2, y: FIELD_H / 2, vx: 0, vy: 0 };
+    let botTick = 0;
+    let botAbilityAt = 0;
+
     let scoreRed = 0;
     let scoreBlue = 0;
     let timeLeft = GAME_LENGTH;
@@ -410,39 +423,91 @@ function EggballPage() {
     // Handle incoming player states
     channel.on("broadcast", { event: "player" }, ({ payload }: { payload: PlayerState }) => {
       if (payload.id === myId) return;
-      players.set(payload.id, payload);
+      // Host owns the bots it simulates — ignore echoes of them.
+      if (hostId === myId && payload.id.startsWith("bot-")) return;
+      const existing = players.get(payload.id);
+      if (!existing) {
+        players.set(payload.id, { ...payload });
+      } else {
+        // Keep the rendered position where it is and interpolate toward the
+        // freshly received one in the game loop (removes network jitter).
+        Object.assign(existing, payload, { x: existing.x, y: existing.y });
+      }
+      targets.set(payload.id, { ...payload });
       lastSeen.set(payload.id, performance.now());
       knownIds.add(payload.id);
     });
     channel.on("broadcast", { event: "leave" }, ({ payload }: { payload: { id: string } }) => {
       players.delete(payload.id);
+      targets.delete(payload.id);
       lastSeen.delete(payload.id);
       knownIds.delete(payload.id);
     });
-    channel.on("broadcast", { event: "kick" }, ({ payload }: { payload: { bx: number; by: number; bvx: number; bvy: number; id?: string; spin?: number } }) => {
+    channel.on("broadcast", { event: "kick" }, ({ payload }: { payload: { bx: number; by: number; bvx: number; bvy: number; id?: string; spin?: number; curlIn?: number; flipMs?: number; lifeMs?: number } }) => {
       // Only host authoritative on ball, but any client can announce a kick they applied.
-      // Only the host will process kicks; others get ball via 'state'.
       if (hostId === myId) {
         ball.x = payload.bx;
         ball.y = payload.by;
         ball.vx = payload.bvx;
         ball.vy = payload.bvy;
         ball.spin = payload.spin ?? 0;
+        ball.curlIn = payload.curlIn ?? 0;
+        ball.curlFlipAt = payload.flipMs ? performance.now() + payload.flipMs : 0;
+        ball.curlUntil = payload.lifeMs ? performance.now() + payload.lifeMs : 0;
+        ball.freezeUntil = 0;
         ballKickedAt = performance.now();
         if (payload.id) lastTouchId = payload.id;
       }
+    });
+    channel.on("broadcast", { event: "freeze" }, ({ payload }: { payload: { until: number } }) => {
+      if (hostId === myId) {
+        // Remote clocks differ — freeze for the standard duration from now.
+        ball.freezeUntil = performance.now() + FREEZE_TIME * 1000;
+        ball.vx = 0;
+        ball.vy = 0;
+        ball.spin = 0;
+        void payload;
+      }
+    });
+    channel.on("broadcast", { event: "rewind" }, () => {
+      if (hostId === myId) {
+        const target = performance.now() - REWIND_SECONDS * 1000;
+        if (lastGoalAt > target) return;
+        const snap = history.find((h) => h.t >= target) ?? history[0];
+        if (!snap) return;
+        ball.x = snap.bx;
+        ball.y = snap.by;
+        ball.vx = snap.bvx;
+        ball.vy = snap.bvy;
+        ball.spin = 0;
+        timeLeft = Math.min(GAME_LENGTH, snap.timeLeft);
+      }
+      rewindFxUntil = performance.now() + REWIND_FX_MS;
     });
 
     // Someone just joined and is asking everyone to re-announce themselves.
     channel.on("broadcast", { event: "hello" }, () => {
       const me = getMyPlayer();
       if (me) channel.send({ type: "broadcast", event: "player", payload: { ...me } });
+      if (hostId === myId) {
+        for (const b of players.values()) {
+          if (b.id.startsWith("bot-")) channel.send({ type: "broadcast", event: "player", payload: { ...b } });
+        }
+      }
     });
     channel.on("broadcast", { event: "state" }, ({ payload }: { payload: GameState }) => {
       if (payload.hostId === myId) return; // ignore our own would-be echoes
       // Lowest id wins host election; ignore state from a higher-id would-be host.
       if (hostId === myId && myId < payload.hostId) return;
-      ball = payload.ball;
+      // Ball is smoothed toward the host's authoritative position.
+      ballTarget.x = payload.ball.x;
+      ballTarget.y = payload.ball.y;
+      ballTarget.vx = payload.ball.vx;
+      ballTarget.vy = payload.ball.vy;
+      ball.vx = payload.ball.vx;
+      ball.vy = payload.ball.vy;
+      ball.spin = payload.ball.spin;
+      ball.freezeUntil = payload.ball.freezeUntil;
       scoreRed = payload.scoreRed;
       scoreBlue = payload.scoreBlue;
       timeLeft = payload.timeLeft;
@@ -455,6 +520,7 @@ function EggballPage() {
       hostId = payload.hostId;
       setScore({ red: scoreRed, blue: scoreBlue, timeLeft, countdown, ended, winner, intermission });
     });
+
 
     channel.on("presence", { event: "sync" }, () => {
       const state = channel.presenceState() as Record<string, Array<{ id: string }>>;
@@ -519,7 +585,18 @@ function EggballPage() {
         p.vx = 0;
         p.vy = 0;
       });
-      ball = { x: FIELD_W / 2, y: FIELD_H / 2, vx: 0, vy: 0 };
+      ball.x = FIELD_W / 2;
+      ball.y = FIELD_H / 2;
+      ball.vx = 0;
+      ball.vy = 0;
+      ball.spin = 0;
+      ball.curlUntil = 0;
+      ball.curlFlipAt = 0;
+      ball.freezeUntil = 0;
+      ballTarget.x = ball.x;
+      ballTarget.y = ball.y;
+      ballTarget.vx = 0;
+      ballTarget.vy = 0;
     }
 
     function getMyPlayer(): PlayerState | null {
@@ -607,6 +684,86 @@ function EggballPage() {
         if (goalCooldown > 0) goalCooldown = Math.max(0, goalCooldown - dt);
       }
 
+      // Smooth remote players toward their last received network position.
+      for (const [id, t] of targets) {
+        const p = players.get(id);
+        if (!p || id === myId) continue;
+        const k = Math.min(1, dt * 14);
+        p.x += (t.x - p.x) * k;
+        p.y += (t.y - p.y) * k;
+      }
+      // Non-hosts smooth the ball toward the host's authoritative position.
+      if (hostId !== myId) {
+        const k = Math.min(1, dt * 16);
+        ball.x += (ballTarget.x - ball.x) * k;
+        ball.y += (ballTarget.y - ball.y) * k;
+      }
+
+      // Host-only: run a bot on any team that has no human players.
+      if (hostId === myId && !ended) {
+        botTick += dt;
+        for (const team of ["red", "blue"] as const) {
+          const botId = `bot-${team}`;
+          const humans = [...players.values()].some((p) => p.team === team && !p.id.startsWith("bot-"));
+          const otherHumans = [...players.values()].some((p) => p.team !== team && !p.id.startsWith("bot-"));
+          if (humans || !otherHumans) {
+            players.delete(botId);
+            continue;
+          }
+          let bot = players.get(botId);
+          if (!bot) {
+            bot = {
+              id: botId,
+              team,
+              x: team === "red" ? FIELD_W * 0.25 : FIELD_W * 0.75,
+              y: FIELD_H / 2,
+              vx: 0,
+              vy: 0,
+              kickUntil: 0,
+              lastDirX: team === "red" ? 1 : -1,
+              lastDirY: 0,
+              name: "Bot",
+              ability: Math.random() < 0.5 ? "dash" : "magnet",
+            };
+            players.set(botId, bot);
+          }
+          if (countdown > 0 || celebrate > 0) continue;
+          const goalX = team === "red" ? FIELD_W : 0;
+          // Line up behind the ball relative to the goal it attacks.
+          const aimX = ball.x + (ball.x - goalX > 0 ? -1 : 1) * 0;
+          const dx = aimX - bot.x;
+          const dy = ball.y - bot.y;
+          const d = Math.hypot(dx, dy) || 1;
+          const nx = dx / d;
+          const ny = dy / d;
+          bot.vx = nx * PLAYER_SPEED * 0.92;
+          bot.vy = ny * PLAYER_SPEED * 0.92;
+          bot.lastDirX = nx;
+          bot.lastDirY = ny;
+          bot.x += bot.vx * dt;
+          bot.y += bot.vy * dt;
+          // Kick when touching the ball, aiming at the goal.
+          if (d < PLAYER_R + BALL_R + KICK_REACH) {
+            const gx = goalX - ball.x;
+            const gy = FIELD_H / 2 - ball.y;
+            const gl = Math.hypot(gx, gy) || 1;
+            ball.vx = (gx / gl) * KICK_POWER;
+            ball.vy = (gy / gl) * KICK_POWER;
+            ball.freezeUntil = 0;
+            bot.kickUntil = now + KICK_DURATION * 1000;
+            lastTouchId = botId;
+          }
+          // Occasionally fire its one ability.
+          if (now > botAbilityAt && d < MAGNET_RANGE) {
+            botAbilityAt = now + 4000 + Math.random() * 4000;
+            if (bot.ability === "dash") bot.dashUntil = now + DASH_TIME * 1000;
+            else bot.magnetUntil = now + MAGNET_TIME * 1000;
+          }
+          if (botTick > 0.05) channel.send({ type: "broadcast", event: "player", payload: { ...bot } });
+        }
+        if (botTick > 0.05) botTick = 0;
+      }
+
 
       // Move my player
       const me = getMyPlayer();
@@ -647,14 +804,26 @@ function EggballPage() {
             } else if (ab.id === "curl") {
               me.curlUntil = now + CURL_WINDOW * 1000;
               playTone(520, 0.18, "triangle", 0.12, 900);
-            } else if (ab.id === "dribble") {
-              const dx = len > 0 ? ix : me.lastDirX;
-              const dy = len > 0 ? iy : me.lastDirY;
-              const dl = Math.hypot(dx, dy) || 1;
-              dashDirX = dx / dl;
-              dashDirY = dy / dl;
-              me.dribbleUntil = now + DRIBBLE_TIME * 1000;
-              playTone(300, 0.2, "square", 0.13, 520);
+            } else if (ab.id === "freeze") {
+              const until = now + FREEZE_TIME * 1000;
+              if (hostId === myId) {
+                ball.freezeUntil = until;
+                ball.vx = 0;
+                ball.vy = 0;
+                ball.spin = 0;
+              } else {
+                channel.send({ type: "broadcast", event: "freeze", payload: { until } });
+              }
+              ball.freezeUntil = until;
+              playTone(1200, 0.35, "sine", 0.14, 300);
+              for (let i = 0; i < 24; i++) {
+                const a = Math.random() * Math.PI * 2;
+                particles.push({ x: ball.x, y: ball.y, vx: Math.cos(a) * 160, vy: Math.sin(a) * 160, life: 0.6, maxLife: 0.6, color: "#bfefff", size: 3 + Math.random() * 3 });
+              }
+            } else if (ab.id === "bumper") {
+              me.bumperUntil = now + BUMPER_TIME * 1000;
+              playTone(420, 0.25, "square", 0.15, 900);
+
             } else if (ab.id === "gamble") {
               // Weighted roll: 1 is common, 10 is rare.
               const r = Math.random();
@@ -815,14 +984,15 @@ function EggballPage() {
             const nx = bdx / bd;
             const ny = bdy / bd;
             const powered = myCharge >= 1;
-            // Gamble: a loaded roll (1..10) scales this one kick. 1 = no boost.
+            // Gamble: a loaded roll (1..10) scales this one kick. 1 = no boost,
+            // 10 = a full-field rocket.
             let gambleMult = 1;
             if ((me.gambleUntil ?? 0) > now) {
               const roll = me.gambleRoll ?? 1;
-              gambleMult = 1 + ((roll - 1) / 9) * (GAMBLE_MAX_MULT - 1);
+              gambleMult = 1 + Math.pow((roll - 1) / 9, 1.35) * (GAMBLE_MAX_MULT - 1);
               me.gambleUntil = 0;
               playTone(220 + roll * 80, 0.24, "sawtooth", 0.18, 120);
-              for (let i = 0; i < roll * 3; i++) {
+              for (let i = 0; i < roll * 5; i++) {
                 const a = Math.random() * Math.PI * 2;
                 particles.push({ x: ball.x, y: ball.y, vx: Math.cos(a) * 180, vy: Math.sin(a) * 180, life: 0.5, maxLife: 0.5, color: "#facc15", size: 3 });
               }
@@ -831,7 +1001,8 @@ function EggballPage() {
             const nvx = nx * power;
             const nvy = ny * power;
             // Curl: bends AWAY first, then swings back inward toward the goal
-            // we're attacking.
+            // we're attacking. Both directions are locked in here and never
+            // recomputed while the ball is travelling.
             let spin = 0;
             let curlIn = 0;
             if ((me.curlUntil ?? 0) > now) {
@@ -869,29 +1040,38 @@ function EggballPage() {
             bumpQuestRef.current("kicks");
             myCharge = 0;
             me.charge = 0;
-            me.dribbleUntil = 0;
             const flipAt = spin ? now + CURL_OUT_TIME * 1000 : 0;
+            const curlEnd = spin ? now + CURL_LIFE * 1000 : 0;
             if (hostId === myId) {
               ball.vx = nvx;
               ball.vy = nvy;
               ball.spin = spin;
               ball.curlFlipAt = flipAt;
               ball.curlIn = curlIn;
+              ball.curlUntil = curlEnd;
+              ball.freezeUntil = 0;
               ballKickedAt = now;
               lastTouchId = myId;
             } else {
               channel.send({
                 type: "broadcast",
                 event: "kick",
-                payload: { bx: ball.x, by: ball.y, bvx: nvx, bvy: nvy, id: myId, spin, curlIn, flipMs: spin ? CURL_OUT_TIME * 1000 : 0 },
+                payload: { bx: ball.x, by: ball.y, bvx: nvx, bvy: nvy, id: myId, spin, curlIn, flipMs: spin ? CURL_OUT_TIME * 1000 : 0, lifeMs: spin ? CURL_LIFE * 1000 : 0 },
               });
             }
+
           }
         }
       }
 
       // Host-only: ball physics
-      if (hostId === myId && countdown <= 0 && !ended && celebrate <= 0) {
+      const ballFrozen = (ball.freezeUntil ?? 0) > now;
+      if (hostId === myId && countdown <= 0 && !ended && celebrate <= 0 && ballFrozen) {
+        ball.vx = 0;
+        ball.vy = 0;
+        ball.spin = 0;
+      }
+      if (hostId === myId && countdown <= 0 && !ended && celebrate <= 0 && !ballFrozen) {
         // Magnet: any player with an active magnet drags the ball toward them.
         for (const p of players.values()) {
           if (!p.magnetUntil || p.magnetUntil < now) continue;
@@ -924,22 +1104,27 @@ function EggballPage() {
           for (const p of players.values()) pull(p);
         }
 
-        // Curl spin: two-phase — bends outward first, then swings back inward
-        // toward the goal the kicker is attacking.
+        // Curl spin: bends outward first, then swings back inward toward the goal
+        // the kicker was attacking. The direction is locked in at kick time and
+        // never re-evaluated, and the whole effect expires after CURL_LIFE.
         if (ball.spin) {
-          if (ball.curlFlipAt && now >= ball.curlFlipAt) {
-            ball.spin = -Math.abs(ball.spin) * Math.sign(ball.curlIn || 1) * -1;
-            ball.spin = Math.abs(ball.spin) * (ball.curlIn || 1);
-            ball.curlFlipAt = 0;
-          }
-          const ang = Math.atan2(ball.vy, ball.vx) + ball.spin * dt;
-          const sp2 = Math.hypot(ball.vx, ball.vy);
-          ball.vx = Math.cos(ang) * sp2;
-          ball.vy = Math.sin(ang) * sp2;
-          ball.spin *= Math.pow(0.988, dt * 60);
-          if (Math.abs(ball.spin) < 0.05) {
+          if ((ball.curlUntil ?? 0) <= now) {
             ball.spin = 0;
             ball.curlFlipAt = 0;
+          } else {
+            if (ball.curlFlipAt && now >= ball.curlFlipAt) {
+              ball.spin = Math.abs(ball.spin) * (ball.curlIn || 1);
+              ball.curlFlipAt = 0;
+            }
+            const ang = Math.atan2(ball.vy, ball.vx) + ball.spin * dt;
+            const sp2 = Math.hypot(ball.vx, ball.vy);
+            ball.vx = Math.cos(ang) * sp2;
+            ball.vy = Math.sin(ang) * sp2;
+            ball.spin *= Math.pow(0.985, dt * 60);
+            if (Math.abs(ball.spin) < 0.05) {
+              ball.spin = 0;
+              ball.curlFlipAt = 0;
+            }
           }
         }
 
@@ -954,6 +1139,7 @@ function EggballPage() {
         }
         ball.x += ball.vx * dt;
         ball.y += ball.vy * dt;
+
 
 
         // Wall collision - but goal openings on left/right.
@@ -1045,8 +1231,35 @@ function EggballPage() {
             ball.x += nx * overlap;
             ball.y += ny * overlap;
 
+            // Bumper: while active, any touch auto-blasts the ball with
+            // power-shot force in the direction the player is heading.
+            if ((p.bumperUntil ?? 0) > now && now - ballKickedAt > 200) {
+              const psp = Math.hypot(p.vx, p.vy);
+              let bx = psp > 1 ? p.vx / psp : p.lastDirX;
+              let by = psp > 1 ? p.vy / psp : p.lastDirY;
+              const bl = Math.hypot(bx, by) || 1;
+              bx /= bl;
+              by /= bl;
+              // blend in the contact normal so off-centre bumps still angle out
+              bx = bx * 0.75 + nx * 0.25;
+              by = by * 0.75 + ny * 0.25;
+              const bl2 = Math.hypot(bx, by) || 1;
+              const bpow = KICK_POWER * POWER_MULT;
+              ball.vx = (bx / bl2) * bpow;
+              ball.vy = (by / bl2) * bpow;
+              ball.spin = 0;
+              ballKickedAt = now;
+              lastTouchId = p.id;
+              for (let i = 0; i < 16; i++) {
+                const a = Math.random() * Math.PI * 2;
+                particles.push({ x: ball.x, y: ball.y, vx: Math.cos(a) * 220, vy: Math.sin(a) * 220, life: 0.4, maxLife: 0.4, color: "#fb923c", size: 4 });
+              }
+              if (p.id === myId) sfxPower();
+              continue;
+            }
+
             if (!recentlyKicked) {
-              // Dribble: the ball rolls out mostly in the direction the player is
+              // Loose push: the ball rolls out mostly in the direction the player is
               // RUNNING (blended slightly with the contact normal), at the speed
               // of the push. Off-centre contacts nudge it a little sideways
               // instead of squirting it away, and it stops when the player stops.
@@ -1069,6 +1282,7 @@ function EggballPage() {
                 ball.vy = 0;
               }
             }
+
 
             // Pinch detection: another player pressing into the ball from the opposite side,
             // AND neither contact is against a wall (pure player-vs-player pinch).
@@ -1144,15 +1358,15 @@ function EggballPage() {
       }
 
 
-      // Broadcast my player state ~20Hz
-      if (me && now - lastBroadcast > 50) {
+      // Broadcast my player state ~30Hz
+      if (me && now - lastBroadcast > 33) {
         lastBroadcast = now;
         const payload: PlayerState = { ...me };
         channel.send({ type: "broadcast", event: "player", payload });
       }
 
-      // Host broadcasts game state ~20Hz
-      if (hostId === myId && now - lastStateBroadcast > 50) {
+      // Host broadcasts game state ~30Hz (plus every bot it simulates)
+      if (hostId === myId && now - lastStateBroadcast > 33) {
         lastStateBroadcast = now;
         const state: GameState = {
           ball,
@@ -1168,8 +1382,12 @@ function EggballPage() {
           celebrateId,
         };
         channel.send({ type: "broadcast", event: "state", payload: state });
+        for (const b of players.values()) {
+          if (b.id.startsWith("bot-")) channel.send({ type: "broadcast", event: "player", payload: { ...b } });
+        }
         setScore({ red: scoreRed, blue: scoreBlue, timeLeft, countdown, ended, winner, intermission });
       }
+
 
 
       // Purge stale players
@@ -1312,25 +1530,7 @@ function EggballPage() {
           ctx.globalAlpha = 0.4 + Math.random() * 0.5;
           ctx.translate((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14);
         }
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI * 2);
-        ctx.fillStyle = skin.color || teamColor;
-        ctx.fill();
-        if (skin.flag) {
-          ctx.clip();
-          const bands = skin.flag.colors;
-          const n = bands.length;
-          for (let i = 0; i < n; i++) {
-            ctx.fillStyle = bands[i];
-            if (skin.flag.vertical) {
-              ctx.fillRect(p.x - PLAYER_R + (i * PLAYER_R * 2) / n, p.y - PLAYER_R, (PLAYER_R * 2) / n + 1, PLAYER_R * 2);
-            } else {
-              ctx.fillRect(p.x - PLAYER_R, p.y - PLAYER_R + (i * PLAYER_R * 2) / n, PLAYER_R * 2, (PLAYER_R * 2) / n + 1);
-            }
-          }
-        }
-        ctx.restore();
+        drawSkin(ctx, p.x, p.y, PLAYER_R, { color: skin.color || teamColor, flag: skin.flag });
         // Curl armed: subtle spinning aura
         if ((p.curlUntil ?? 0) > now) {
           ctx.beginPath();
@@ -1350,14 +1550,22 @@ function EggballPage() {
           ctx.stroke();
           ctx.restore();
         }
-        // Dribbling: trailing streak
-        if ((p.dribbleUntil ?? 0) > now) {
+        // Bumper active: pulsing shield
+        if ((p.bumperUntil ?? 0) > now) {
+          ctx.save();
           ctx.beginPath();
-          ctx.arc(p.x, p.y, PLAYER_R + 4, 0, Math.PI * 2);
-          ctx.lineWidth = 3;
-          ctx.strokeStyle = "rgba(134,239,172,0.85)";
+          ctx.arc(p.x, p.y, PLAYER_R + 7 + Math.sin(now / 90) * 3, 0, Math.PI * 2);
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = "rgba(249,115,22,0.85)";
           ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, PLAYER_R + 12, 0, Math.PI * 2);
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = "rgba(249,115,22,0.35)";
+          ctx.stroke();
+          ctx.restore();
         }
+
         ctx.beginPath();
         ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI * 2);
         ctx.lineWidth = 3;
@@ -1421,15 +1629,37 @@ function EggballPage() {
       }
 
       // Ball
-
-
+      const frozen = (ball.freezeUntil ?? 0) > now;
       ctx.beginPath();
       ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
-      ctx.fillStyle = "white";
+      ctx.fillStyle = frozen ? "#dff4ff" : "white";
       ctx.fill();
       ctx.lineWidth = 2;
-      ctx.strokeStyle = "#333";
+      ctx.strokeStyle = frozen ? "#38bdf8" : "#333";
       ctx.stroke();
+
+      // Freeze VFX: icy shards + frosty halo
+      if (frozen) {
+        ctx.save();
+        ctx.strokeStyle = "rgba(125,211,252,0.9)";
+        ctx.lineWidth = 3;
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2 + now / 900;
+          const r1 = BALL_R + 3;
+          const r2 = BALL_R + 11 + Math.sin(now / 160 + i) * 3;
+          ctx.beginPath();
+          ctx.moveTo(ball.x + Math.cos(a) * r1, ball.y + Math.sin(a) * r1);
+          ctx.lineTo(ball.x + Math.cos(a) * r2, ball.y + Math.sin(a) * r2);
+          ctx.stroke();
+        }
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, BALL_R + 6, 0, Math.PI * 2);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "rgba(191,239,255,0.6)";
+        ctx.stroke();
+        ctx.restore();
+      }
+
 
       // Power-kick charge meter: a circle growing inside the ball
       {
@@ -1501,6 +1731,42 @@ function EggballPage() {
       }
 
       ctx.restore();
+
+      // Time Rewind VFX: cyan flash, scanlines and a spinning clock
+      if (rewindFxUntil > now) {
+        const k = (rewindFxUntil - now) / REWIND_FX_MS; // 1 -> 0
+        ctx.save();
+        ctx.globalAlpha = 0.35 * k;
+        ctx.fillStyle = "#22d3ee";
+        ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+        ctx.globalAlpha = 0.25 * k;
+        ctx.fillStyle = "#0f172a";
+        const off = (now / 8) % 12;
+        for (let yy = -12 + off; yy < CANVAS_H; yy += 12) ctx.fillRect(0, yy, CANVAS_W, 5);
+        ctx.globalAlpha = 0.9 * k;
+        ctx.strokeStyle = "#e0f2fe";
+        ctx.lineWidth = 6;
+        const cx = CANVAS_W / 2;
+        const cy = CANVAS_H / 2;
+        const rr = 70 + (1 - k) * 60;
+        ctx.beginPath();
+        ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+        ctx.stroke();
+        const hand = -Math.PI / 2 - (1 - k) * Math.PI * 4;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(hand) * rr * 0.7, cy + Math.sin(hand) * rr * 0.7);
+        ctx.stroke();
+        ctx.globalAlpha = k;
+        ctx.fillStyle = "#e0f2fe";
+        ctx.font = "bold 34px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("REWIND", cx, cy + rr + 34);
+        ctx.restore();
+      }
+
+
 
       // GOAL! banner drawn in screen space (unaffected by the zoom camera)
       if (celebrate > 0) {
@@ -1633,41 +1899,64 @@ function EggballPage() {
 
   return (
     <div className="h-screen w-screen bg-neutral-900 text-white flex flex-col items-center overflow-hidden">
-      <div className="flex items-center gap-6 text-2xl font-bold py-2 shrink-0">
-        <span className="text-red-400">RED {score.red}</span>
-        <span className="text-neutral-300 text-lg tabular-nums">{mm}:{ss}</span>
-        <span className="text-blue-400">{score.blue} BLUE</span>
-        {joined && (
-          <button
-            onClick={() => setMenuOpen(true)}
-            className="ml-4 px-3 py-1 rounded-md bg-neutral-700 hover:bg-neutral-600 text-sm font-semibold"
-          >
-            Teams
-          </button>
-        )}
-        {joined && (
-          <button
-            onClick={() => {
-              setQuestsOpen(false);
-              setShopOpen(true);
-            }}
-            className="px-3 py-1 rounded-md bg-yellow-500 hover:bg-yellow-400 text-black text-sm font-bold"
-          >
-            Shop
-          </button>
-        )}
-        {joined && (
+      <div className="w-full grid grid-cols-3 items-center px-4 py-2 shrink-0">
+        {/* Left buttons */}
+        <div className="flex items-center gap-2 justify-start">
+          {joined && (
+            <button
+              onClick={() => setMenuOpen(true)}
+              className="px-3 py-1 rounded-md bg-neutral-700 hover:bg-neutral-600 text-sm font-semibold"
+            >
+              Teams
+            </button>
+          )}
+          {joined && (
+            <button
+              onClick={() => {
+                setQuestsOpen(false);
+                setLogOpen(false);
+                setShopOpen(true);
+              }}
+              className="px-3 py-1 rounded-md bg-yellow-500 hover:bg-yellow-400 text-black text-sm font-bold"
+            >
+              Shop
+            </button>
+          )}
+        </div>
+        {/* Centre scoreboard */}
+        <div className="flex items-center justify-center gap-6 text-2xl font-bold">
+          <span className="text-red-400">RED {score.red}</span>
+          <span className="text-neutral-300 text-lg tabular-nums">
+            {mm}:{ss}
+          </span>
+          <span className="text-blue-400">{score.blue} BLUE</span>
+        </div>
+        {/* Right buttons */}
+        <div className="flex items-center gap-2 justify-end">
+          <span className="text-sm font-bold text-yellow-400">${shop.money.toLocaleString()}</span>
+          {joined && (
+            <button
+              onClick={() => {
+                setShopOpen(false);
+                setLogOpen(false);
+                setQuestsOpen(true);
+              }}
+              className="px-3 py-1 rounded-md bg-emerald-500 hover:bg-emerald-400 text-black text-sm font-bold"
+            >
+              Quests
+            </button>
+          )}
           <button
             onClick={() => {
               setShopOpen(false);
-              setQuestsOpen(true);
+              setQuestsOpen(false);
+              setLogOpen(true);
             }}
-            className="px-3 py-1 rounded-md bg-emerald-500 hover:bg-emerald-400 text-black text-sm font-bold"
+            className="px-3 py-1 rounded-md bg-neutral-700 hover:bg-neutral-600 text-sm font-semibold"
           >
-            Quests
+            Updates
           </button>
-        )}
-        <span className="text-sm font-bold text-yellow-400">${shop.money.toLocaleString()}</span>
+        </div>
       </div>
       <div
         className="relative"
@@ -1682,7 +1971,7 @@ function EggballPage() {
           height={CANVAS_H}
           style={{ width: "100%", height: "100%", display: "block", borderRadius: 8 }}
         />
-        {joined && !shopOpen && !questsOpen && !showMenu && (
+        {joined && !shopOpen && !questsOpen && !logOpen && !showMenu && (
           <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-4">
             <AbilityDial id={shop.ability} frac={abilityUi.frac} armed={abilityUi.armed} roll={abilityUi.roll} />
           </div>
@@ -1705,7 +1994,9 @@ function EggballPage() {
             onClose={() => setQuestsOpen(false)}
           />
         )}
-        {showMenu && !shopOpen && !questsOpen && (
+        {logOpen && !shopOpen && !questsOpen && <UpdateLogPanel onClose={() => setLogOpen(false)} />}
+
+        {showMenu && !shopOpen && !questsOpen && !logOpen && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/70 rounded-lg">
             <div className="bg-neutral-800 rounded-xl p-8 shadow-2xl text-center max-w-sm">
               <h1 className="text-3xl font-bold mb-2">Eggball</h1>
