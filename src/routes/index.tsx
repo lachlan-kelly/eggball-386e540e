@@ -1514,6 +1514,42 @@ function EggballPage() {
 
       ctx.restore();
 
+      // Time Rewind VFX: cyan flash, scanlines and a spinning clock
+      if (rewindFxUntil > now) {
+        const k = (rewindFxUntil - now) / REWIND_FX_MS; // 1 -> 0
+        ctx.save();
+        ctx.globalAlpha = 0.35 * k;
+        ctx.fillStyle = "#22d3ee";
+        ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+        ctx.globalAlpha = 0.25 * k;
+        ctx.fillStyle = "#0f172a";
+        const off = (now / 8) % 12;
+        for (let yy = -12 + off; yy < CANVAS_H; yy += 12) ctx.fillRect(0, yy, CANVAS_W, 5);
+        ctx.globalAlpha = 0.9 * k;
+        ctx.strokeStyle = "#e0f2fe";
+        ctx.lineWidth = 6;
+        const cx = CANVAS_W / 2;
+        const cy = CANVAS_H / 2;
+        const rr = 70 + (1 - k) * 60;
+        ctx.beginPath();
+        ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+        ctx.stroke();
+        const hand = -Math.PI / 2 - (1 - k) * Math.PI * 4;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(hand) * rr * 0.7, cy + Math.sin(hand) * rr * 0.7);
+        ctx.stroke();
+        ctx.globalAlpha = k;
+        ctx.fillStyle = "#e0f2fe";
+        ctx.font = "bold 34px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("REWIND", cx, cy + rr + 34);
+        ctx.restore();
+      }
+
+
+
       // GOAL! banner drawn in screen space (unaffected by the zoom camera)
       if (celebrate > 0) {
         const scorer = celebrateId ? players.get(celebrateId) : undefined;
