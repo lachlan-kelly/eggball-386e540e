@@ -1057,8 +1057,35 @@ function EggballPage() {
             ball.x += nx * overlap;
             ball.y += ny * overlap;
 
+            // Bumper: while active, any touch auto-blasts the ball with
+            // power-shot force in the direction the player is heading.
+            if ((p.bumperUntil ?? 0) > now && now - ballKickedAt > 200) {
+              const psp = Math.hypot(p.vx, p.vy);
+              let bx = psp > 1 ? p.vx / psp : p.lastDirX;
+              let by = psp > 1 ? p.vy / psp : p.lastDirY;
+              const bl = Math.hypot(bx, by) || 1;
+              bx /= bl;
+              by /= bl;
+              // blend in the contact normal so off-centre bumps still angle out
+              bx = bx * 0.75 + nx * 0.25;
+              by = by * 0.75 + ny * 0.25;
+              const bl2 = Math.hypot(bx, by) || 1;
+              const bpow = KICK_POWER * POWER_MULT;
+              ball.vx = (bx / bl2) * bpow;
+              ball.vy = (by / bl2) * bpow;
+              ball.spin = 0;
+              ballKickedAt = now;
+              lastTouchId = p.id;
+              for (let i = 0; i < 16; i++) {
+                const a = Math.random() * Math.PI * 2;
+                particles.push({ x: ball.x, y: ball.y, vx: Math.cos(a) * 220, vy: Math.sin(a) * 220, life: 0.4, maxLife: 0.4, color: "#fb923c", size: 4 });
+              }
+              if (p.id === myId) sfxPower();
+              continue;
+            }
+
             if (!recentlyKicked) {
-              // Dribble: the ball rolls out mostly in the direction the player is
+              // Loose push: the ball rolls out mostly in the direction the player is
               // RUNNING (blended slightly with the contact normal), at the speed
               // of the push. Off-centre contacts nudge it a little sideways
               // instead of squirting it away, and it stops when the player stops.
@@ -1081,6 +1108,7 @@ function EggballPage() {
                 ball.vy = 0;
               }
             }
+
 
             // Pinch detection: another player pressing into the ball from the opposite side,
             // AND neither contact is against a wall (pure player-vs-player pinch).
