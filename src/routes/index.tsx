@@ -50,8 +50,9 @@ const CURL_WINDOW = 5; // seconds to land the curled kick
 const CURL_RATE = 3.6; // rad/sec of velocity rotation at full spin
 const CURL_OUT_TIME = 0.34; // seconds bending away from goal before swinging back
 const CURL_LIFE = 1.7; // total seconds the curl acts on the ball
-const DRIBBLE_SPEED = 400;
-const DRIBBLE_TIME = 0.7;
+const FREEZE_TIME = 1.6; // seconds the ball is locked in place
+const BUMPER_TIME = 5; // seconds of auto power-kick on contact
+const REWIND_FX_MS = 900; // duration of the rewind screen effect
 const GAMBLE_WINDOW = 8; // seconds to use the rolled kick
 const GAMBLE_MAX_MULT = 4.5; // roll of 10 = full-field shot
 const DEBUG_GLITCH = 1.1; // seconds of glitching before the teleport
