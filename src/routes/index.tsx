@@ -1411,15 +1411,37 @@ function EggballPage() {
       }
 
       // Ball
-
-
+      const frozen = (ball.freezeUntil ?? 0) > now;
       ctx.beginPath();
       ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
-      ctx.fillStyle = "white";
+      ctx.fillStyle = frozen ? "#dff4ff" : "white";
       ctx.fill();
       ctx.lineWidth = 2;
-      ctx.strokeStyle = "#333";
+      ctx.strokeStyle = frozen ? "#38bdf8" : "#333";
       ctx.stroke();
+
+      // Freeze VFX: icy shards + frosty halo
+      if (frozen) {
+        ctx.save();
+        ctx.strokeStyle = "rgba(125,211,252,0.9)";
+        ctx.lineWidth = 3;
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2 + now / 900;
+          const r1 = BALL_R + 3;
+          const r2 = BALL_R + 11 + Math.sin(now / 160 + i) * 3;
+          ctx.beginPath();
+          ctx.moveTo(ball.x + Math.cos(a) * r1, ball.y + Math.sin(a) * r1);
+          ctx.lineTo(ball.x + Math.cos(a) * r2, ball.y + Math.sin(a) * r2);
+          ctx.stroke();
+        }
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, BALL_R + 6, 0, Math.PI * 2);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "rgba(191,239,255,0.6)";
+        ctx.stroke();
+        ctx.restore();
+      }
+
 
       // Power-kick charge meter: a circle growing inside the ball
       {
