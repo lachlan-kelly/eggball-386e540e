@@ -1730,7 +1730,7 @@ function EggballPage() {
         )}
         {logOpen && !shopOpen && !questsOpen && <UpdateLogPanel onClose={() => setLogOpen(false)} />}
 
-        {showMenu && !shopOpen && !questsOpen && (
+        {showMenu && !shopOpen && !questsOpen && !logOpen && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/70 rounded-lg">
             <div className="bg-neutral-800 rounded-xl p-8 shadow-2xl text-center max-w-sm">
               <h1 className="text-3xl font-bold mb-2">Eggball</h1>
