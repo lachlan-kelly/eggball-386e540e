@@ -1144,15 +1144,15 @@ function EggballPage() {
       }
 
 
-      // Broadcast my player state ~20Hz
-      if (me && now - lastBroadcast > 50) {
+      // Broadcast my player state ~30Hz
+      if (me && now - lastBroadcast > 33) {
         lastBroadcast = now;
         const payload: PlayerState = { ...me };
         channel.send({ type: "broadcast", event: "player", payload });
       }
 
-      // Host broadcasts game state ~20Hz
-      if (hostId === myId && now - lastStateBroadcast > 50) {
+      // Host broadcasts game state ~30Hz (plus every bot it simulates)
+      if (hostId === myId && now - lastStateBroadcast > 33) {
         lastStateBroadcast = now;
         const state: GameState = {
           ball,
@@ -1168,8 +1168,12 @@ function EggballPage() {
           celebrateId,
         };
         channel.send({ type: "broadcast", event: "state", payload: state });
+        for (const b of players.values()) {
+          if (b.id.startsWith("bot-")) channel.send({ type: "broadcast", event: "player", payload: { ...b } });
+        }
         setScore({ red: scoreRed, blue: scoreBlue, timeLeft, countdown, ended, winner, intermission });
       }
+
 
 
       // Purge stale players
