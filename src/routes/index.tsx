@@ -579,7 +579,18 @@ function EggballPage() {
         p.vx = 0;
         p.vy = 0;
       });
-      ball = { x: FIELD_W / 2, y: FIELD_H / 2, vx: 0, vy: 0 };
+      ball.x = FIELD_W / 2;
+      ball.y = FIELD_H / 2;
+      ball.vx = 0;
+      ball.vy = 0;
+      ball.spin = 0;
+      ball.curlUntil = 0;
+      ball.curlFlipAt = 0;
+      ball.freezeUntil = 0;
+      ballTarget.x = ball.x;
+      ballTarget.y = ball.y;
+      ballTarget.vx = 0;
+      ballTarget.vy = 0;
     }
 
     function getMyPlayer(): PlayerState | null {
