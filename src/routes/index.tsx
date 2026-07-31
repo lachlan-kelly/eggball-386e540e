@@ -647,14 +647,26 @@ function EggballPage() {
             } else if (ab.id === "curl") {
               me.curlUntil = now + CURL_WINDOW * 1000;
               playTone(520, 0.18, "triangle", 0.12, 900);
-            } else if (ab.id === "dribble") {
-              const dx = len > 0 ? ix : me.lastDirX;
-              const dy = len > 0 ? iy : me.lastDirY;
-              const dl = Math.hypot(dx, dy) || 1;
-              dashDirX = dx / dl;
-              dashDirY = dy / dl;
-              me.dribbleUntil = now + DRIBBLE_TIME * 1000;
-              playTone(300, 0.2, "square", 0.13, 520);
+            } else if (ab.id === "freeze") {
+              const until = now + FREEZE_TIME * 1000;
+              if (hostId === myId) {
+                ball.freezeUntil = until;
+                ball.vx = 0;
+                ball.vy = 0;
+                ball.spin = 0;
+              } else {
+                channel.send({ type: "broadcast", event: "freeze", payload: { until } });
+              }
+              localFreezeUntil = until;
+              playTone(1200, 0.35, "sine", 0.14, 300);
+              for (let i = 0; i < 24; i++) {
+                const a = Math.random() * Math.PI * 2;
+                particles.push({ x: ball.x, y: ball.y, vx: Math.cos(a) * 160, vy: Math.sin(a) * 160, life: 0.6, maxLife: 0.6, color: "#bfefff", size: 3 + Math.random() * 3 });
+              }
+            } else if (ab.id === "bumper") {
+              me.bumperUntil = now + BUMPER_TIME * 1000;
+              playTone(420, 0.25, "square", 0.15, 900);
+
             } else if (ab.id === "gamble") {
               // Weighted roll: 1 is common, 10 is rare.
               const r = Math.random();
