@@ -282,8 +282,15 @@ function EggballPage() {
   useEffect(() => {
     const myId = myIdRef.current;
     const players = new Map<string, PlayerState>();
+    /** Latest network positions for remote players; rendering lerps toward these. */
+    const targets = new Map<string, PlayerState>();
     const lastSeen = new Map<string, number>();
-    let ball: BallState = { x: FIELD_W / 2, y: FIELD_H / 2, vx: 0, vy: 0 };
+    const ball: BallState = { x: FIELD_W / 2, y: FIELD_H / 2, vx: 0, vy: 0 };
+    /** Host's authoritative ball position (non-hosts smooth toward it). */
+    const ballTarget = { x: FIELD_W / 2, y: FIELD_H / 2, vx: 0, vy: 0 };
+    let botTick = 0;
+    let botAbilityAt = 0;
+
     let scoreRed = 0;
     let scoreBlue = 0;
     let timeLeft = GAME_LENGTH;
