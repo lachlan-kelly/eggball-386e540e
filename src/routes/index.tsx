@@ -410,39 +410,91 @@ function EggballPage() {
     // Handle incoming player states
     channel.on("broadcast", { event: "player" }, ({ payload }: { payload: PlayerState }) => {
       if (payload.id === myId) return;
-      players.set(payload.id, payload);
+      // Host owns the bots it simulates — ignore echoes of them.
+      if (hostId === myId && payload.id.startsWith("bot-")) return;
+      const existing = players.get(payload.id);
+      if (!existing) {
+        players.set(payload.id, { ...payload });
+      } else {
+        // Keep the rendered position where it is and interpolate toward the
+        // freshly received one in the game loop (removes network jitter).
+        Object.assign(existing, payload, { x: existing.x, y: existing.y });
+      }
+      targets.set(payload.id, { ...payload });
       lastSeen.set(payload.id, performance.now());
       knownIds.add(payload.id);
     });
     channel.on("broadcast", { event: "leave" }, ({ payload }: { payload: { id: string } }) => {
       players.delete(payload.id);
+      targets.delete(payload.id);
       lastSeen.delete(payload.id);
       knownIds.delete(payload.id);
     });
-    channel.on("broadcast", { event: "kick" }, ({ payload }: { payload: { bx: number; by: number; bvx: number; bvy: number; id?: string; spin?: number } }) => {
+    channel.on("broadcast", { event: "kick" }, ({ payload }: { payload: { bx: number; by: number; bvx: number; bvy: number; id?: string; spin?: number; curlIn?: number; flipMs?: number; lifeMs?: number } }) => {
       // Only host authoritative on ball, but any client can announce a kick they applied.
-      // Only the host will process kicks; others get ball via 'state'.
       if (hostId === myId) {
         ball.x = payload.bx;
         ball.y = payload.by;
         ball.vx = payload.bvx;
         ball.vy = payload.bvy;
         ball.spin = payload.spin ?? 0;
+        ball.curlIn = payload.curlIn ?? 0;
+        ball.curlFlipAt = payload.flipMs ? performance.now() + payload.flipMs : 0;
+        ball.curlUntil = payload.lifeMs ? performance.now() + payload.lifeMs : 0;
+        ball.freezeUntil = 0;
         ballKickedAt = performance.now();
         if (payload.id) lastTouchId = payload.id;
       }
+    });
+    channel.on("broadcast", { event: "freeze" }, ({ payload }: { payload: { until: number } }) => {
+      if (hostId === myId) {
+        // Remote clocks differ — freeze for the standard duration from now.
+        ball.freezeUntil = performance.now() + FREEZE_TIME * 1000;
+        ball.vx = 0;
+        ball.vy = 0;
+        ball.spin = 0;
+        void payload;
+      }
+    });
+    channel.on("broadcast", { event: "rewind" }, () => {
+      if (hostId === myId) {
+        const target = performance.now() - REWIND_SECONDS * 1000;
+        if (lastGoalAt > target) return;
+        const snap = history.find((h) => h.t >= target) ?? history[0];
+        if (!snap) return;
+        ball.x = snap.bx;
+        ball.y = snap.by;
+        ball.vx = snap.bvx;
+        ball.vy = snap.bvy;
+        ball.spin = 0;
+        timeLeft = Math.min(GAME_LENGTH, snap.timeLeft);
+      }
+      rewindFxUntil = performance.now() + REWIND_FX_MS;
     });
 
     // Someone just joined and is asking everyone to re-announce themselves.
     channel.on("broadcast", { event: "hello" }, () => {
       const me = getMyPlayer();
       if (me) channel.send({ type: "broadcast", event: "player", payload: { ...me } });
+      if (hostId === myId) {
+        for (const b of players.values()) {
+          if (b.id.startsWith("bot-")) channel.send({ type: "broadcast", event: "player", payload: { ...b } });
+        }
+      }
     });
     channel.on("broadcast", { event: "state" }, ({ payload }: { payload: GameState }) => {
       if (payload.hostId === myId) return; // ignore our own would-be echoes
       // Lowest id wins host election; ignore state from a higher-id would-be host.
       if (hostId === myId && myId < payload.hostId) return;
-      ball = payload.ball;
+      // Ball is smoothed toward the host's authoritative position.
+      ballTarget.x = payload.ball.x;
+      ballTarget.y = payload.ball.y;
+      ballTarget.vx = payload.ball.vx;
+      ballTarget.vy = payload.ball.vy;
+      ball.vx = payload.ball.vx;
+      ball.vy = payload.ball.vy;
+      ball.spin = payload.ball.spin;
+      ball.freezeUntil = payload.ball.freezeUntil;
       scoreRed = payload.scoreRed;
       scoreBlue = payload.scoreBlue;
       timeLeft = payload.timeLeft;
@@ -455,6 +507,7 @@ function EggballPage() {
       hostId = payload.hostId;
       setScore({ red: scoreRed, blue: scoreBlue, timeLeft, countdown, ended, winner, intermission });
     });
+
 
     channel.on("presence", { event: "sync" }, () => {
       const state = channel.presenceState() as Record<string, Array<{ id: string }>>;
