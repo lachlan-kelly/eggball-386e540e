@@ -827,14 +827,15 @@ function EggballPage() {
             const nx = bdx / bd;
             const ny = bdy / bd;
             const powered = myCharge >= 1;
-            // Gamble: a loaded roll (1..10) scales this one kick. 1 = no boost.
+            // Gamble: a loaded roll (1..10) scales this one kick. 1 = no boost,
+            // 10 = a full-field rocket.
             let gambleMult = 1;
             if ((me.gambleUntil ?? 0) > now) {
               const roll = me.gambleRoll ?? 1;
-              gambleMult = 1 + ((roll - 1) / 9) * (GAMBLE_MAX_MULT - 1);
+              gambleMult = 1 + Math.pow((roll - 1) / 9, 1.35) * (GAMBLE_MAX_MULT - 1);
               me.gambleUntil = 0;
               playTone(220 + roll * 80, 0.24, "sawtooth", 0.18, 120);
-              for (let i = 0; i < roll * 3; i++) {
+              for (let i = 0; i < roll * 5; i++) {
                 const a = Math.random() * Math.PI * 2;
                 particles.push({ x: ball.x, y: ball.y, vx: Math.cos(a) * 180, vy: Math.sin(a) * 180, life: 0.5, maxLife: 0.5, color: "#facc15", size: 3 });
               }
@@ -843,7 +844,8 @@ function EggballPage() {
             const nvx = nx * power;
             const nvy = ny * power;
             // Curl: bends AWAY first, then swings back inward toward the goal
-            // we're attacking.
+            // we're attacking. Both directions are locked in here and never
+            // recomputed while the ball is travelling.
             let spin = 0;
             let curlIn = 0;
             if ((me.curlUntil ?? 0) > now) {
@@ -881,23 +883,26 @@ function EggballPage() {
             bumpQuestRef.current("kicks");
             myCharge = 0;
             me.charge = 0;
-            me.dribbleUntil = 0;
             const flipAt = spin ? now + CURL_OUT_TIME * 1000 : 0;
+            const curlEnd = spin ? now + CURL_LIFE * 1000 : 0;
             if (hostId === myId) {
               ball.vx = nvx;
               ball.vy = nvy;
               ball.spin = spin;
               ball.curlFlipAt = flipAt;
               ball.curlIn = curlIn;
+              ball.curlUntil = curlEnd;
+              ball.freezeUntil = 0;
               ballKickedAt = now;
               lastTouchId = myId;
             } else {
               channel.send({
                 type: "broadcast",
                 event: "kick",
-                payload: { bx: ball.x, by: ball.y, bvx: nvx, bvy: nvy, id: myId, spin, curlIn, flipMs: spin ? CURL_OUT_TIME * 1000 : 0 },
+                payload: { bx: ball.x, by: ball.y, bvx: nvx, bvy: nvy, id: myId, spin, curlIn, flipMs: spin ? CURL_OUT_TIME * 1000 : 0, lifeMs: spin ? CURL_LIFE * 1000 : 0 },
               });
             }
+
           }
         }
       }
