@@ -183,8 +183,28 @@ function EggballPage() {
   const [shop, setShop] = useState<ShopState>(DEFAULT_SHOP);
   const [quests, setQuests] = useState<QuestState>(defaultQuests);
   const [score, setScore] = useState({ red: 0, blue: 0, timeLeft: GAME_LENGTH, countdown: 0, ended: false, winner: null as Team | "draw", intermission: 0 });
+  const [boardOpen, setBoardOpen] = useState(false);
+  const [teamCounts, setTeamCounts] = useState({ red: 0, blue: 0 });
   // 0..1 readiness of the equipped ability (1 = ready), plus armed / gamble roll state
   const [abilityUi, setAbilityUi] = useState({ frac: 1, armed: false, roll: 0 });
+
+  const closePanels = () => {
+    setShopOpen(false);
+    setQuestsOpen(false);
+    setLogOpen(false);
+    setBoardOpen(false);
+    setMenuOpen(false);
+  };
+
+  /** Teams must stay within TEAM_GAP players of each other. */
+  const canJoin = (t: Exclude<Team, null>) => {
+    if (team === t) return true;
+    const mine = team;
+    const red = teamCounts.red - (mine === "red" ? 1 : 0) + (t === "red" ? 1 : 0);
+    const blue = teamCounts.blue - (mine === "blue" ? 1 : 0) + (t === "blue" ? 1 : 0);
+    return Math.abs(red - blue) <= TEAM_GAP;
+  };
+
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const myIdRef = useRef<string>(makeId());
