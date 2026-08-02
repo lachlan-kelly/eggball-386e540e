@@ -291,6 +291,15 @@ export function getAbility(id?: string) {
 
 export type EquipKind = "skin" | "explosion" | "ability" | "anthem";
 
+export interface PlayerStats {
+  goals: number;
+  wins: number;
+  games: number;
+  hatricks: number;
+}
+
+export const DEFAULT_STATS: PlayerStats = { goals: 0, wins: 0, games: 0, hatricks: 0 };
+
 export interface ShopState {
   money: number;
   owned: string[];
@@ -300,6 +309,7 @@ export interface ShopState {
   ability: string;
   anthem: string;
   name: string;
+  stats: PlayerStats;
 }
 
 const KEY = "eggball-shop-v1";
@@ -320,27 +330,32 @@ export const DEFAULT_SHOP: ShopState = {
   ability: "dash",
   anthem: "anthem-none",
   name: "",
+  stats: { ...DEFAULT_STATS },
 };
 
 export function loadShop(): ShopState {
-  if (typeof window === "undefined") return { ...DEFAULT_SHOP };
+  if (typeof window === "undefined") return { ...DEFAULT_SHOP, stats: { ...DEFAULT_STATS } };
   try {
     const raw = window.localStorage.getItem(KEY);
-    if (!raw) return { ...DEFAULT_SHOP };
+    if (!raw) return { ...DEFAULT_SHOP, stats: { ...DEFAULT_STATS } };
     const parsed = JSON.parse(raw) as Partial<ShopState> & { abilityQ?: string; abilityE?: string };
+    const ability = parsed.ability ?? parsed.abilityE ?? parsed.abilityQ ?? "dash";
     return {
       money: typeof parsed.money === "number" ? parsed.money : 0,
       owned: Array.from(new Set([...(parsed.owned ?? []), ...FREEBIES])),
       skin: parsed.skin ?? "default",
       explosion: parsed.explosion ?? "none",
-      ability: parsed.ability ?? parsed.abilityE ?? parsed.abilityQ ?? "dash",
+      // "curl" was removed — fall back to dash for anyone who had it equipped.
+      ability: ABILITIES.some((a) => a.id === ability) ? ability : "dash",
       anthem: parsed.anthem ?? "anthem-none",
       name: typeof parsed.name === "string" ? parsed.name : "",
+      stats: { ...DEFAULT_STATS, ...(parsed.stats ?? {}) },
     };
   } catch {
-    return { ...DEFAULT_SHOP };
+    return { ...DEFAULT_SHOP, stats: { ...DEFAULT_STATS } };
   }
 }
+
 
 export function saveShop(s: ShopState) {
   if (typeof window === "undefined") return;
