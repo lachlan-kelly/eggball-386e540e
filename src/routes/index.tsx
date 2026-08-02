@@ -485,7 +485,7 @@ function EggballPage() {
       me.x = payload.x;
       me.y = payload.y;
       swapFxUntil = performance.now() + 450;
-      sfx.swap();
+      playTone(880, 0.16, "sine", 0.14, 220);
     });
     // Chain: the target reels itself toward the caster for the chain duration.
     channel.on("broadcast", { event: "chain" }, ({ payload }: { payload: { targetId: string; byId: string } }) => {
