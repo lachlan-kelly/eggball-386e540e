@@ -1913,8 +1913,7 @@ function EggballPage() {
           {joined && (
             <button
               onClick={() => {
-                setQuestsOpen(false);
-                setLogOpen(false);
+                closePanels();
                 setShopOpen(true);
               }}
               className="px-3 py-1 rounded-md bg-yellow-500 hover:bg-yellow-400 text-black text-sm font-bold"
@@ -1922,6 +1921,7 @@ function EggballPage() {
               Shop
             </button>
           )}
+
         </div>
         {/* Centre scoreboard */}
         <div className="flex items-center justify-center gap-6 text-2xl font-bold">
