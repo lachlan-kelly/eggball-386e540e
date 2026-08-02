@@ -1373,7 +1373,7 @@ function EggballPage() {
         const frac = left <= 0 ? 1 : Math.max(0, Math.min(1, 1 - left / cooldownLen.v));
         setAbilityUi({
           frac,
-          armed: (me?.curlUntil ?? 0) > now || (me?.gambleUntil ?? 0) > now,
+          armed: (me?.gambleUntil ?? 0) > now || (me?.bumperUntil ?? 0) > now || (me?.rushUntil ?? 0) > now || (me?.invisUntil ?? 0) > now,
           roll: (me?.gambleUntil ?? 0) > now ? me?.gambleRoll ?? 0 : 0,
         });
       }
