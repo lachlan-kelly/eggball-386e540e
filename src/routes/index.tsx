@@ -88,13 +88,47 @@ interface PlayerState {
   charge?: number; // 0..1 power-kick charge
   ability?: string;
   magnetUntil?: number; // timestamp ms while the magnet is pulling
-  curlUntil?: number; // timestamp ms while curl is armed
   dashUntil?: number; // timestamp ms while dashing
   bumperUntil?: number; // timestamp ms while Bumper auto-power-kicks on contact
   gambleUntil?: number; // timestamp ms while a gamble roll is loaded
   gambleRoll?: number; // 1..10 rolled kick power
   glitchUntil?: number; // timestamp ms while the Debug glitch plays
+  invisUntil?: number; // timestamp ms while faded out
+  rushUntil?: number; // timestamp ms while Rush is boosting
+  chainUntil?: number; // timestamp ms while our chain is reeling someone in
+  chainTargetId?: string; // who the chain is hooked to
 }
+
+/** Timer fields that must travel as "ms remaining" — clocks differ per client. */
+const TIMER_KEYS = [
+  "kickUntil",
+  "magnetUntil",
+  "dashUntil",
+  "bumperUntil",
+  "gambleUntil",
+  "glitchUntil",
+  "invisUntil",
+  "rushUntil",
+  "chainUntil",
+] as const;
+
+function encodePlayer(p: PlayerState): PlayerState {
+  const now = performance.now();
+  const out = { ...p } as Record<string, unknown>;
+  for (const k of TIMER_KEYS) out[k] = Math.max(0, ((p[k] as number | undefined) ?? 0) - now);
+  return out as unknown as PlayerState;
+}
+
+function decodePlayer(p: PlayerState): PlayerState {
+  const now = performance.now();
+  const out = { ...p } as Record<string, unknown>;
+  for (const k of TIMER_KEYS) {
+    const left = (p[k] as number | undefined) ?? 0;
+    out[k] = left > 0 ? now + left : 0;
+  }
+  return out as unknown as PlayerState;
+}
+
 
 interface BallState {
   x: number;
