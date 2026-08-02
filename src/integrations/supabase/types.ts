@@ -14,7 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      eggball_profiles: {
+        Row: {
+          ability: string
+          anthem: string
+          created_at: string
+          explosion: string
+          games: number
+          goals: number
+          hatricks: number
+          id: string
+          money: number
+          name: string
+          skin: string
+          updated_at: string
+          wins: number
+        }
+        Insert: {
+          ability?: string
+          anthem?: string
+          created_at?: string
+          explosion?: string
+          games?: number
+          goals?: number
+          hatricks?: number
+          id: string
+          money?: number
+          name?: string
+          skin?: string
+          updated_at?: string
+          wins?: number
+        }
+        Update: {
+          ability?: string
+          anthem?: string
+          created_at?: string
+          explosion?: string
+          games?: number
+          goals?: number
+          hatricks?: number
+          id?: string
+          money?: number
+          name?: string
+          skin?: string
+          updated_at?: string
+          wins?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
