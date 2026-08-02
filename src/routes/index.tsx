@@ -811,19 +811,42 @@ function EggballPage() {
               if (d > MAGNET_RANGE) return; // out of range: no cooldown burned
               me.magnetUntil = now + MAGNET_TIME * 1000;
               playTone(180, 0.25, "triangle", 0.12, 520);
-            } else if (ab.id === "curl") {
-              me.curlUntil = now + CURL_WINDOW * 1000;
-              playTone(520, 0.18, "triangle", 0.12, 900);
+            } else if (ab.id === "invisible") {
+              me.invisUntil = now + INVIS_TIME * 1000;
+              playTone(300, 0.35, "sine", 0.12, 80);
+            } else if (ab.id === "rush") {
+              me.rushUntil = now + RUSH_TIME * 1000;
+              playTone(220, 0.3, "sawtooth", 0.14, 900);
+            } else if (ab.id === "chain") {
+              const target = nearestOther(me, false);
+              if (!target) return; // nobody in range: no cooldown burned
+              me.chainUntil = now + CHAIN_TIME * 1000;
+              me.chainTargetId = target.id;
+              channel.send({ type: "broadcast", event: "chain", payload: { targetId: target.id, byId: myId } });
+              playTone(140, 0.3, "square", 0.14, 420);
+            } else if (ab.id === "swap") {
+              const target = nearestOther(me, true);
+              if (!target) return;
+              const tx = target.x;
+              const ty = target.y;
+              channel.send({ type: "broadcast", event: "swap", payload: { targetId: target.id, x: me.x, y: me.y } });
+              target.x = me.x;
+              target.y = me.y;
+              targets.get(target.id)?.id && Object.assign(targets.get(target.id)!, { x: me.x, y: me.y });
+              me.x = tx;
+              me.y = ty;
+              swapFxUntil = now + 450;
+              playTone(880, 0.16, "sine", 0.14, 220);
             } else if (ab.id === "freeze") {
               const until = now + FREEZE_TIME * 1000;
               if (hostId === myId) {
                 ball.freezeUntil = until;
                 ball.vx = 0;
                 ball.vy = 0;
-                ball.spin = 0;
               } else {
                 channel.send({ type: "broadcast", event: "freeze", payload: { until } });
               }
+
               ball.freezeUntil = until;
               playTone(1200, 0.35, "sine", 0.14, 300);
               for (let i = 0; i < 24; i++) {
