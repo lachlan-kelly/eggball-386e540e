@@ -503,7 +503,7 @@ function EggballPage() {
       ballTarget.vy = payload.ball.vy;
       ball.vx = payload.ball.vx;
       ball.vy = payload.ball.vy;
-      ball.spin = payload.ball.spin;
+      ball.freezeUntil = payload.ball.freezeUntil ? performance.now() + payload.ball.freezeUntil : 0;
       ball.freezeUntil = payload.ball.freezeUntil;
       scoreRed = payload.scoreRed;
       scoreBlue = payload.scoreBlue;
