@@ -879,7 +879,8 @@ function EggballPage() {
                 ball.y = snap.by;
                 ball.vx = snap.bvx;
                 ball.vy = snap.bvy;
-                ball.spin = 0;
+                ball.freezeUntil = 0;
+
                 timeLeft = Math.min(GAME_LENGTH, snap.timeLeft);
               } else {
                 channel.send({ type: "broadcast", event: "rewind", payload: { t: target } });
