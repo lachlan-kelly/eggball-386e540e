@@ -2014,17 +2014,24 @@ function EggballPage() {
               <div className="flex gap-3 justify-center">
                 <button
                   onClick={() => joinWith("red")}
-                  className="px-6 py-3 rounded-lg bg-red-500 hover:bg-red-400 font-bold"
+                  disabled={!canJoin("red")}
+                  className="px-6 py-3 rounded-lg bg-red-500 hover:bg-red-400 font-bold disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {team === "red" ? "Stay Red" : "Join Red"}
                 </button>
                 <button
                   onClick={() => joinWith("blue")}
-                  className="px-6 py-3 rounded-lg bg-blue-500 hover:bg-blue-400 font-bold"
+                  disabled={!canJoin("blue")}
+                  className="px-6 py-3 rounded-lg bg-blue-500 hover:bg-blue-400 font-bold disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {team === "blue" ? "Stay Blue" : "Join Blue"}
                 </button>
               </div>
+              <p className="mt-3 text-xs text-neutral-400">
+                Red {teamCounts.red} v {teamCounts.blue} Blue
+                {(!canJoin("red") || !canJoin("blue")) && " — teams must stay balanced"}
+              </p>
+
               {joined && menuOpen && (
                 <button
                   onClick={() => setMenuOpen(false)}
