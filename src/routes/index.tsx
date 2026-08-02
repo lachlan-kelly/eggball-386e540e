@@ -32,26 +32,24 @@ const GOAL_H = 220;
 const GOAL_DEPTH = 46;
 const POST_R = 8;
 const PLAYER_SPEED = 190; // px/sec
-const BALL_FRICTION = 0.965;
-const BALL_MAX = 900;
-const KICK_POWER = 720;
+const BALL_FRICTION = 0.988; // higher = the ball rolls further
+const BALL_MAX = 1100;
+const KICK_POWER = 760;
 const KICK_DURATION = 0.18; // seconds
 const KICK_REACH = 10; // extra px beyond touching to still land a kick
 const GAME_LENGTH = 5 * 60; // seconds
 const MERCY_LEAD = 5;
 const CANVAS_ASPECT = CANVAS_W / CANVAS_H;
 const CHARGE_TIME = 1.4; // seconds of ball contact to fully charge a power kick
-const POWER_MULT = 2.5;
+const POWER_MULT = 3.6;
+const CORNER_CUT = 90; // length of the diagonal chamfer at each field corner
+const TEAM_GAP = 2; // biggest allowed player-count difference between teams
 // Abilities
 const DASH_SPEED = 640;
 const DASH_TIME = 0.18;
 const MAGNET_RANGE = 230;
 const MAGNET_TIME = 1.0;
 const MAGNET_ACCEL = 2000;
-const CURL_WINDOW = 5; // seconds to land the curled kick
-const CURL_RATE = 3.6; // rad/sec of velocity rotation at full spin
-const CURL_OUT_TIME = 0.34; // seconds bending away from goal before swinging back
-const CURL_LIFE = 1.7; // total seconds the curl acts on the ball
 const FREEZE_TIME = 1.6; // seconds the ball is locked in place
 const BUMPER_TIME = 5; // seconds of auto power-kick on contact
 const REWIND_FX_MS = 900; // duration of the rewind screen effect
@@ -62,6 +60,14 @@ const REWIND_SECONDS = 3;
 const HISTORY_STEP = 100; // ms between rewind snapshots
 const BLACKHOLE_TIME = 1.6;
 const BLACKHOLE_PULL = 900;
+const INVIS_TIME = 3; // seconds of invisibility
+const RUSH_TIME = 2.4; // seconds of the Rush speed boost
+const RUSH_MULT = 1.85; // Rush speed multiplier
+const CHAIN_TIME = 1.1; // seconds the chain reels a player in
+const CHAIN_RANGE = 420;
+const CHAIN_PULL = 560; // px/sec the chained player is dragged
+const SWAP_RANGE = 520;
+
 
 type Team = "red" | "blue" | null;
 
