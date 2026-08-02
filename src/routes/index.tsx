@@ -1937,8 +1937,7 @@ function EggballPage() {
           {joined && (
             <button
               onClick={() => {
-                setShopOpen(false);
-                setLogOpen(false);
+                closePanels();
                 setQuestsOpen(true);
               }}
               className="px-3 py-1 rounded-md bg-emerald-500 hover:bg-emerald-400 text-black text-sm font-bold"
@@ -1948,8 +1947,16 @@ function EggballPage() {
           )}
           <button
             onClick={() => {
-              setShopOpen(false);
-              setQuestsOpen(false);
+              closePanels();
+              setBoardOpen(true);
+            }}
+            className="px-3 py-1 rounded-md bg-sky-500 hover:bg-sky-400 text-black text-sm font-bold"
+          >
+            Leaderboard
+          </button>
+          <button
+            onClick={() => {
+              closePanels();
               setLogOpen(true);
             }}
             className="px-3 py-1 rounded-md bg-neutral-700 hover:bg-neutral-600 text-sm font-semibold"
@@ -1957,6 +1964,7 @@ function EggballPage() {
             Updates
           </button>
         </div>
+
       </div>
       <div
         className="relative"
