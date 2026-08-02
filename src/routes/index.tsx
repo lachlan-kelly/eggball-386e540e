@@ -1099,8 +1099,8 @@ function EggballPage() {
       if (hostId === myId && countdown <= 0 && !ended && celebrate <= 0 && ballFrozen) {
         ball.vx = 0;
         ball.vy = 0;
-        ball.spin = 0;
       }
+
       if (hostId === myId && countdown <= 0 && !ended && celebrate <= 0 && !ballFrozen) {
         // Magnet: any player with an active magnet drags the ball toward them.
         for (const p of players.values()) {
