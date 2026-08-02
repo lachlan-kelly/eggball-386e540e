@@ -1117,7 +1117,8 @@ function EggballPage() {
           if (d > MAGNET_RANGE + 60) continue;
           ball.vx += (dx / d) * MAGNET_ACCEL * dt;
           ball.vy += (dy / d) * MAGNET_ACCEL * dt;
-          ball.spin = 0;
+
+
           lastTouchId = p.id;
         }
 
