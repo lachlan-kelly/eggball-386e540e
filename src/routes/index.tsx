@@ -1134,29 +1134,8 @@ function EggballPage() {
           for (const p of players.values()) pull(p);
         }
 
-        // Curl spin: bends outward first, then swings back inward toward the goal
-        // the kicker was attacking. The direction is locked in at kick time and
-        // never re-evaluated, and the whole effect expires after CURL_LIFE.
-        if (ball.spin) {
-          if ((ball.curlUntil ?? 0) <= now) {
-            ball.spin = 0;
-            ball.curlFlipAt = 0;
-          } else {
-            if (ball.curlFlipAt && now >= ball.curlFlipAt) {
-              ball.spin = Math.abs(ball.spin) * (ball.curlIn || 1);
-              ball.curlFlipAt = 0;
-            }
-            const ang = Math.atan2(ball.vy, ball.vx) + ball.spin * dt;
-            const sp2 = Math.hypot(ball.vx, ball.vy);
-            ball.vx = Math.cos(ang) * sp2;
-            ball.vy = Math.sin(ang) * sp2;
-            ball.spin *= Math.pow(0.985, dt * 60);
-            if (Math.abs(ball.spin) < 0.05) {
-              ball.spin = 0;
-              ball.curlFlipAt = 0;
-            }
-          }
-        }
+
+
 
         // Apply friction
         ball.vx *= Math.pow(BALL_FRICTION, dt * 60);
