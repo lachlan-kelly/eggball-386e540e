@@ -1395,8 +1395,16 @@ function EggballPage() {
       // Ability HUD (throttled to ~15Hz)
       if (now - lastAbilityUi > 66) {
         lastAbilityUi = now;
+        let rc = 0;
+        let bc = 0;
+        for (const p of players.values()) {
+          if (p.team === "red") rc++;
+          else bc++;
+        }
+        setTeamCounts((c) => (c.red === rc && c.blue === bc ? c : { red: rc, blue: bc }));
         const left = cooldownUntil.v - now;
         const frac = left <= 0 ? 1 : Math.max(0, Math.min(1, 1 - left / cooldownLen.v));
+
         setAbilityUi({
           frac,
           armed: (me?.gambleUntil ?? 0) > now || (me?.bumperUntil ?? 0) > now || (me?.rushUntil ?? 0) > now || (me?.invisUntil ?? 0) > now,
