@@ -95,12 +95,9 @@ interface BallState {
   y: number;
   vx: number;
   vy: number;
-  spin?: number; // curl: rad/sec applied to the velocity direction
-  curlFlipAt?: number; // timestamp ms when the curl swings back inward
-  curlIn?: number; // sign of the inward (goal-bound) curl
-  curlUntil?: number; // timestamp ms the curl stops acting
   freezeUntil?: number; // timestamp ms while the ball is frozen in place
 }
+
 
 interface Snapshot {
   t: number;
