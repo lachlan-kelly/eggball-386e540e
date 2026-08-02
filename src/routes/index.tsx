@@ -1551,15 +1551,40 @@ function EggballPage() {
           ctx.globalAlpha = 0.4 + Math.random() * 0.5;
           ctx.translate((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14);
         }
-        drawSkin(ctx, p.x, p.y, PLAYER_R, { color: skin.color || teamColor, flag: skin.flag });
-        // Curl armed: subtle spinning aura
-        if ((p.curlUntil ?? 0) > now) {
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, PLAYER_R + 6 + Math.sin(now / 120) * 2, 0, Math.PI * 2);
-          ctx.lineWidth = 3;
-          ctx.strokeStyle = "rgba(125,211,252,0.85)";
-          ctx.stroke();
+        // Invisible: fade right down (teammates/self keep a faint outline)
+        if ((p.invisUntil ?? 0) > now) {
+          ctx.globalAlpha *= p.id === myId ? 0.35 : 0.08;
         }
+        // Rush: ghost clones trailing behind the runner
+        if ((p.rushUntil ?? 0) > now) {
+          const sp = Math.hypot(p.vx, p.vy) || 1;
+          for (let g = 1; g <= 3; g++) {
+            ctx.save();
+            ctx.globalAlpha = 0.22 / g;
+            drawSkin(ctx, p.x - (p.vx / sp) * 16 * g, p.y - (p.vy / sp) * 16 * g, PLAYER_R, {
+              color: skin.color || teamColor,
+              flag: skin.flag,
+            });
+            ctx.restore();
+          }
+        }
+        drawSkin(ctx, p.x, p.y, PLAYER_R, { color: skin.color || teamColor, flag: skin.flag });
+        // Chain: line drawn to the hooked player
+        if ((p.chainUntil ?? 0) > now && p.chainTargetId) {
+          const t = players.get(p.chainTargetId);
+          if (t) {
+            ctx.save();
+            ctx.setLineDash([8, 6]);
+            ctx.strokeStyle = "rgba(226,232,240,0.85)";
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(t.x, t.y);
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
+
         // Gamble loaded: golden dashed ring
         if ((p.gambleUntil ?? 0) > now) {
           ctx.save();
