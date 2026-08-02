@@ -211,14 +211,42 @@ export const ABILITIES: AbilityItem[] = [
   },
 
   {
-    id: "curl",
-    name: "Curl",
+    id: "invisible",
+    name: "Invisible",
     price: 0,
-    listPrice: 5000,
-    icon: "🌀",
-    description: "Next kick within 5s swings out wide then bends back into the goal you're attacking.",
-    cooldown: 10,
+    listPrice: 8000,
+    icon: "👻",
+    description: "Vanish from everyone else's screen for 3 seconds, then fade back in.",
+    cooldown: 14,
   },
+  {
+    id: "chain",
+    name: "Chain",
+    price: 0,
+    listPrice: 12000,
+    icon: "⛓️",
+    description: "Hook the closest player and reel them toward you.",
+    cooldown: 12,
+  },
+  {
+    id: "swap",
+    name: "Swap",
+    price: 0,
+    listPrice: 16000,
+    icon: "🔀",
+    description: "Instantly trade places with the closest opponent.",
+    cooldown: 18,
+  },
+  {
+    id: "rush",
+    name: "Rush",
+    price: 0,
+    listPrice: 6500,
+    icon: "💨",
+    description: "Big speed boost for a few seconds, leaving ghost trails behind you.",
+    cooldown: 13,
+  },
+
   {
     id: "gamble",
     name: "Gamble",
@@ -263,6 +291,15 @@ export function getAbility(id?: string) {
 
 export type EquipKind = "skin" | "explosion" | "ability" | "anthem";
 
+export interface PlayerStats {
+  goals: number;
+  wins: number;
+  games: number;
+  hatricks: number;
+}
+
+export const DEFAULT_STATS: PlayerStats = { goals: 0, wins: 0, games: 0, hatricks: 0 };
+
 export interface ShopState {
   money: number;
   owned: string[];
@@ -272,6 +309,7 @@ export interface ShopState {
   ability: string;
   anthem: string;
   name: string;
+  stats: PlayerStats;
 }
 
 const KEY = "eggball-shop-v1";
@@ -292,27 +330,32 @@ export const DEFAULT_SHOP: ShopState = {
   ability: "dash",
   anthem: "anthem-none",
   name: "",
+  stats: { ...DEFAULT_STATS },
 };
 
 export function loadShop(): ShopState {
-  if (typeof window === "undefined") return { ...DEFAULT_SHOP };
+  if (typeof window === "undefined") return { ...DEFAULT_SHOP, stats: { ...DEFAULT_STATS } };
   try {
     const raw = window.localStorage.getItem(KEY);
-    if (!raw) return { ...DEFAULT_SHOP };
+    if (!raw) return { ...DEFAULT_SHOP, stats: { ...DEFAULT_STATS } };
     const parsed = JSON.parse(raw) as Partial<ShopState> & { abilityQ?: string; abilityE?: string };
+    const ability = parsed.ability ?? parsed.abilityE ?? parsed.abilityQ ?? "dash";
     return {
       money: typeof parsed.money === "number" ? parsed.money : 0,
       owned: Array.from(new Set([...(parsed.owned ?? []), ...FREEBIES])),
       skin: parsed.skin ?? "default",
       explosion: parsed.explosion ?? "none",
-      ability: parsed.ability ?? parsed.abilityE ?? parsed.abilityQ ?? "dash",
+      // "curl" was removed — fall back to dash for anyone who had it equipped.
+      ability: ABILITIES.some((a) => a.id === ability) ? ability : "dash",
       anthem: parsed.anthem ?? "anthem-none",
       name: typeof parsed.name === "string" ? parsed.name : "",
+      stats: { ...DEFAULT_STATS, ...(parsed.stats ?? {}) },
     };
   } catch {
-    return { ...DEFAULT_SHOP };
+    return { ...DEFAULT_SHOP, stats: { ...DEFAULT_STATS } };
   }
 }
+
 
 export function saveShop(s: ShopState) {
   if (typeof window === "undefined") return;
