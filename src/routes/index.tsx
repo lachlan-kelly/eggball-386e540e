@@ -417,22 +417,25 @@ function EggballPage() {
       config: { broadcast: { self: false }, presence: { key: myId } },
     });
 
+    /** Send our own state with timers as *durations remaining* (clock-safe). */
+    const sendPlayer = (p: PlayerState) =>
+      channel.send({ type: "broadcast", event: "player", payload: encodePlayer(p) });
+
     // Handle incoming player states
     channel.on("broadcast", { event: "player" }, ({ payload }: { payload: PlayerState }) => {
       if (payload.id === myId) return;
-      // Host owns the bots it simulates — ignore echoes of them.
-      if (hostId === myId && payload.id.startsWith("bot-")) return;
-      const existing = players.get(payload.id);
+      const decoded = decodePlayer(payload);
+      const existing = players.get(decoded.id);
       if (!existing) {
-        players.set(payload.id, { ...payload });
+        players.set(decoded.id, { ...decoded });
       } else {
         // Keep the rendered position where it is and interpolate toward the
         // freshly received one in the game loop (removes network jitter).
-        Object.assign(existing, payload, { x: existing.x, y: existing.y });
+        Object.assign(existing, decoded, { x: existing.x, y: existing.y });
       }
-      targets.set(payload.id, { ...payload });
-      lastSeen.set(payload.id, performance.now());
-      knownIds.add(payload.id);
+      targets.set(decoded.id, { ...decoded });
+      lastSeen.set(decoded.id, performance.now());
+      knownIds.add(decoded.id);
     });
     channel.on("broadcast", { event: "leave" }, ({ payload }: { payload: { id: string } }) => {
       players.delete(payload.id);
@@ -440,30 +443,24 @@ function EggballPage() {
       lastSeen.delete(payload.id);
       knownIds.delete(payload.id);
     });
-    channel.on("broadcast", { event: "kick" }, ({ payload }: { payload: { bx: number; by: number; bvx: number; bvy: number; id?: string; spin?: number; curlIn?: number; flipMs?: number; lifeMs?: number } }) => {
+    channel.on("broadcast", { event: "kick" }, ({ payload }: { payload: { bx: number; by: number; bvx: number; bvy: number; id?: string } }) => {
       // Only host authoritative on ball, but any client can announce a kick they applied.
       if (hostId === myId) {
         ball.x = payload.bx;
         ball.y = payload.by;
         ball.vx = payload.bvx;
         ball.vy = payload.bvy;
-        ball.spin = payload.spin ?? 0;
-        ball.curlIn = payload.curlIn ?? 0;
-        ball.curlFlipAt = payload.flipMs ? performance.now() + payload.flipMs : 0;
-        ball.curlUntil = payload.lifeMs ? performance.now() + payload.lifeMs : 0;
         ball.freezeUntil = 0;
         ballKickedAt = performance.now();
         if (payload.id) lastTouchId = payload.id;
       }
     });
-    channel.on("broadcast", { event: "freeze" }, ({ payload }: { payload: { until: number } }) => {
+    channel.on("broadcast", { event: "freeze" }, () => {
       if (hostId === myId) {
         // Remote clocks differ — freeze for the standard duration from now.
         ball.freezeUntil = performance.now() + FREEZE_TIME * 1000;
         ball.vx = 0;
         ball.vy = 0;
-        ball.spin = 0;
-        void payload;
       }
     });
     channel.on("broadcast", { event: "rewind" }, () => {
@@ -476,22 +473,38 @@ function EggballPage() {
         ball.y = snap.by;
         ball.vx = snap.bvx;
         ball.vy = snap.bvy;
-        ball.spin = 0;
         timeLeft = Math.min(GAME_LENGTH, snap.timeLeft);
       }
       rewindFxUntil = performance.now() + REWIND_FX_MS;
+    });
+    // Swap: the caster moved itself already; the target moves itself here.
+    channel.on("broadcast", { event: "swap" }, ({ payload }: { payload: { targetId: string; x: number; y: number } }) => {
+      if (payload.targetId !== myId) return;
+      const me = getMyPlayer();
+      if (!me) return;
+      me.x = payload.x;
+      me.y = payload.y;
+      swapFxUntil = performance.now() + 450;
+      sfx.swap();
+    });
+    // Chain: the target reels itself toward the caster for the chain duration.
+    channel.on("broadcast", { event: "chain" }, ({ payload }: { payload: { targetId: string; byId: string } }) => {
+      if (payload.targetId !== myId) return;
+      chainedBy = payload.byId;
+      chainedUntil = performance.now() + CHAIN_TIME * 1000;
+    });
+    // Host tells everyone to line up for kickoff; each client places itself.
+    channel.on("broadcast", { event: "reset" }, ({ payload }: { payload: { spots: Record<string, { x: number; y: number }> } }) => {
+      if (hostId === myId) return;
+      applyReset(payload.spots);
     });
 
     // Someone just joined and is asking everyone to re-announce themselves.
     channel.on("broadcast", { event: "hello" }, () => {
       const me = getMyPlayer();
-      if (me) channel.send({ type: "broadcast", event: "player", payload: { ...me } });
-      if (hostId === myId) {
-        for (const b of players.values()) {
-          if (b.id.startsWith("bot-")) channel.send({ type: "broadcast", event: "player", payload: { ...b } });
-        }
-      }
+      if (me) void sendPlayer(me);
     });
+
     channel.on("broadcast", { event: "state" }, ({ payload }: { payload: GameState }) => {
       if (payload.hostId === myId) return; // ignore our own would-be echoes
       // Lowest id wins host election; ignore state from a higher-id would-be host.
