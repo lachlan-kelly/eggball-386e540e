@@ -576,37 +576,79 @@ function EggballPage() {
     let running = true;
     let goalCooldown = 0; // small guard after goal reset
 
-    function resetPositions() {
-      // place all players on their sides
+    /** Kickoff spots for everyone we know about, keyed by player id. */
+    function kickoffSpots(): Record<string, { x: number; y: number }> {
       const allPlayers = Array.from(players.values());
       const me = getMyPlayer();
-      if (me) allPlayers.push(me);
-      const redTeam = allPlayers.filter((p) => p.team === "red");
-      const blueTeam = allPlayers.filter((p) => p.team === "blue");
-      redTeam.forEach((p, i) => {
-        p.x = FIELD_W * 0.25;
-        p.y = (FIELD_H / (redTeam.length + 1)) * (i + 1);
+      if (me && !players.has(me.id)) allPlayers.push(me);
+      const spots: Record<string, { x: number; y: number }> = {};
+      for (const side of ["red", "blue"] as const) {
+        const line = allPlayers.filter((p) => p.team === side);
+        line.forEach((p, i) => {
+          spots[p.id] = {
+            x: side === "red" ? FIELD_W * 0.25 : FIELD_W * 0.75,
+            y: (FIELD_H / (line.length + 1)) * (i + 1),
+          };
+        });
+      }
+      return spots;
+    }
+
+    /** Place ourselves (and our local copies of everyone else) for kickoff. */
+    function applyReset(spots: Record<string, { x: number; y: number }>) {
+      const me = getMyPlayer();
+      for (const [id, spot] of Object.entries(spots)) {
+        const p = id === myId ? me : players.get(id);
+        if (!p) continue;
+        p.x = spot.x;
+        p.y = spot.y;
         p.vx = 0;
         p.vy = 0;
-      });
-      blueTeam.forEach((p, i) => {
-        p.x = FIELD_W * 0.75;
-        p.y = (FIELD_H / (blueTeam.length + 1)) * (i + 1);
-        p.vx = 0;
-        p.vy = 0;
-      });
+        const t = targets.get(id);
+        if (t) {
+          t.x = spot.x;
+          t.y = spot.y;
+        }
+      }
+      chainedUntil = 0;
       ball.x = FIELD_W / 2;
       ball.y = FIELD_H / 2;
       ball.vx = 0;
       ball.vy = 0;
-      ball.spin = 0;
-      ball.curlUntil = 0;
-      ball.curlFlipAt = 0;
       ball.freezeUntil = 0;
       ballTarget.x = ball.x;
       ballTarget.y = ball.y;
       ballTarget.vx = 0;
       ballTarget.vy = 0;
+    }
+
+    /** Host-side kickoff: reset locally and tell everyone else where to stand. */
+    function resetPositions() {
+      const spots = kickoffSpots();
+      applyReset(spots);
+      channel.send({ type: "broadcast", event: "reset", payload: { spots } });
+      // Everyone starts a round with their ability on cooldown.
+      const ab = getAbility(shopRef.current.ability);
+      if (ab) {
+        cooldownUntil.v = performance.now() + ab.cooldown * 1000;
+        cooldownLen.v = ab.cooldown * 1000;
+      }
+    }
+
+    /** Closest other player, optionally restricted to opponents. */
+    function nearestOther(me: PlayerState, opponentsOnly: boolean): PlayerState | null {
+      let best: PlayerState | null = null;
+      let bestD = opponentsOnly ? SWAP_RANGE : CHAIN_RANGE;
+      for (const p of players.values()) {
+        if (p.id === me.id) continue;
+        if (opponentsOnly && p.team === me.team) continue;
+        const d = Math.hypot(p.x - me.x, p.y - me.y);
+        if (d < bestD) {
+          bestD = d;
+          best = p;
+        }
+      }
+      return best;
     }
 
     function getMyPlayer(): PlayerState | null {
@@ -631,7 +673,6 @@ function EggballPage() {
           anthem: shopRef.current.anthem,
           ability: shopRef.current.ability,
           magnetUntil: 0,
-          curlUntil: 0,
           dashUntil: 0,
         };
         players.set(myId, me);
@@ -644,6 +685,7 @@ function EggballPage() {
       me.ability = shopRef.current.ability;
       return me;
     }
+
 
 
     function tick() {
