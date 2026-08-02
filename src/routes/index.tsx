@@ -1228,7 +1228,7 @@ function EggballPage() {
               const bpow = KICK_POWER * POWER_MULT;
               ball.vx = (bx / bl2) * bpow;
               ball.vy = (by / bl2) * bpow;
-              ball.spin = 0;
+              ball.freezeUntil = 0;
               ballKickedAt = now;
               lastTouchId = p.id;
               for (let i = 0; i < 16; i++) {
