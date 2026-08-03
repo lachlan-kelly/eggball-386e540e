@@ -132,7 +132,103 @@ export function drawSkin(
       ctx.arc(x, y, r * 0.3, 0, Math.PI * 2);
       ctx.fillStyle = f.accent2 ?? "#002776";
       ctx.fill();
+    } else if (f.type === "ensign") {
+      // Blue ensign: Union Jack canton + Southern Cross (AU adds the Commonwealth Star)
+      const nz = f.accent2 === "nz";
+      const starColor = f.accent ?? "#ffffff";
+      ctx.fillStyle = c[0] ?? "#00247d";
+      ctx.fillRect(left, top, size, size);
+
+      // --- Union Jack canton (top-left quarter) ---
+      const cw = size * 0.5;
+      const ch = size * 0.5;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(left, top, cw, ch);
+      ctx.clip();
+      ctx.fillStyle = "#00247d";
+      ctx.fillRect(left, top, cw, ch);
+      // white diagonals
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = Math.max(1.5, size * 0.075);
+      ctx.beginPath();
+      ctx.moveTo(left, top);
+      ctx.lineTo(left + cw, top + ch);
+      ctx.moveTo(left + cw, top);
+      ctx.lineTo(left, top + ch);
+      ctx.stroke();
+      // red diagonals
+      ctx.strokeStyle = "#cf142b";
+      ctx.lineWidth = Math.max(0.8, size * 0.035);
+      ctx.beginPath();
+      ctx.moveTo(left, top);
+      ctx.lineTo(left + cw, top + ch);
+      ctx.moveTo(left + cw, top);
+      ctx.lineTo(left, top + ch);
+      ctx.stroke();
+      // white cross
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = Math.max(2, size * 0.115);
+      ctx.beginPath();
+      ctx.moveTo(left + cw / 2, top);
+      ctx.lineTo(left + cw / 2, top + ch);
+      ctx.moveTo(left, top + ch / 2);
+      ctx.lineTo(left + cw, top + ch / 2);
+      ctx.stroke();
+      // red cross
+      ctx.strokeStyle = "#cf142b";
+      ctx.lineWidth = Math.max(1.2, size * 0.065);
+      ctx.beginPath();
+      ctx.moveTo(left + cw / 2, top);
+      ctx.lineTo(left + cw / 2, top + ch);
+      ctx.moveTo(left, top + ch / 2);
+      ctx.lineTo(left + cw, top + ch / 2);
+      ctx.stroke();
+      ctx.restore();
+
+      // --- Stars ---
+      const star = (sx: number, sy: number, rad: number, points: number, color: string) => {
+        ctx.beginPath();
+        for (let i = 0; i < points * 2; i++) {
+          const ang = (Math.PI * i) / points - Math.PI / 2;
+          const rr = i % 2 === 0 ? rad : rad * 0.44;
+          const px = sx + Math.cos(ang) * rr;
+          const py = sy + Math.sin(ang) * rr;
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fillStyle = color;
+        ctx.fill();
+      };
+
+      if (!nz) {
+        // Commonwealth Star, under the canton
+        star(left + size * 0.25, top + size * 0.75, size * 0.11, 7, starColor);
+      }
+      // Southern Cross (right half)
+      const cross: Array<[number, number, number]> = nz
+        ? [
+            [0.78, 0.24, 0.055],
+            [0.9, 0.5, 0.055],
+            [0.66, 0.56, 0.055],
+            [0.78, 0.8, 0.055],
+          ]
+        : [
+            [0.78, 0.18, 0.06],
+            [0.92, 0.48, 0.06],
+            [0.64, 0.5, 0.06],
+            [0.78, 0.82, 0.06],
+            [0.83, 0.6, 0.035],
+          ];
+      for (const [fx, fy, fr] of cross) {
+        const sx = left + size * fx;
+        const sy = top + size * fy;
+        if (nz) star(sx, sy, size * (fr + 0.018), 5, "#ffffff");
+        star(sx, sy, size * fr, nz ? 5 : 7, nz ? starColor : "#ffffff");
+      }
     }
+
   }
 
   ctx.restore();
