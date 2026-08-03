@@ -29,7 +29,10 @@ function Board({
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold capitalize">{scope} quests</h2>
         <p className="text-xs text-neutral-400">
-          Resets in <span className="tabular-nums text-neutral-200">{formatDuration(msUntilReset(scope, now))}</span>
+          Resets in{" "}
+          <span className="tabular-nums text-neutral-200">
+            {formatDuration(msUntilReset(scope, now))}
+          </span>
         </p>
       </div>
       {board.quests.map((q) => {
@@ -117,7 +120,11 @@ export function QuestsPanel({
           </button>
         </aside>
         <div className="flex-1 p-5 overflow-y-auto">
-          <Board board={scope === "daily" ? quests.daily : quests.weekly} scope={scope} onClaim={onClaim} />
+          <Board
+            board={scope === "daily" ? quests.daily : quests.weekly}
+            scope={scope}
+            onClaim={onClaim}
+          />
         </div>
       </div>
     </div>

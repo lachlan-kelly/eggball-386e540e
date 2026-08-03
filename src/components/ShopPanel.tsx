@@ -38,7 +38,6 @@ function SkinPreview({ skin }: { skin: SkinItem }) {
   return <canvas ref={ref} width={96} height={96} className="h-12 w-12 shrink-0" />;
 }
 
-
 function ExplosionPreview({ item }: { item: ExplosionItem }) {
   return (
     <div className="h-12 w-12 rounded-lg bg-neutral-900 flex items-center justify-center text-xl shrink-0">
@@ -81,9 +80,21 @@ export function ShopPanel({
 
   const rows =
     section === "skins"
-      ? SKINS.map((s) => ({ id: s.id, name: s.name, price: s.price, preview: <SkinPreview skin={s} />, kind: "skin" as const }))
+      ? SKINS.map((s) => ({
+          id: s.id,
+          name: s.name,
+          price: s.price,
+          preview: <SkinPreview skin={s} />,
+          kind: "skin" as const,
+        }))
       : section === "explosions"
-        ? EXPLOSIONS.map((e) => ({ id: e.id, name: e.name, price: e.price, preview: <ExplosionPreview item={e} />, kind: "explosion" as const }))
+        ? EXPLOSIONS.map((e) => ({
+            id: e.id,
+            name: e.name,
+            price: e.price,
+            preview: <ExplosionPreview item={e} />,
+            kind: "explosion" as const,
+          }))
         : [];
 
   return (
@@ -107,7 +118,9 @@ export function ShopPanel({
               key={id}
               onClick={() => setSection(id)}
               className={`text-left px-3 py-2 rounded-md text-sm font-semibold ${
-                section === id ? "bg-neutral-700 text-white" : "text-neutral-400 hover:bg-neutral-800"
+                section === id
+                  ? "bg-neutral-700 text-white"
+                  : "text-neutral-400 hover:bg-neutral-800"
               }`}
             >
               {label}
@@ -126,18 +139,25 @@ export function ShopPanel({
           {section === "abilities" ? (
             <div className="flex flex-col gap-3">
               <p className="text-xs text-neutral-500">
-                Equip <b>one</b> ability — trigger it in-game with <b>Q</b> or <b>E</b>. Free during testing.
+                Equip <b>one</b> ability — trigger it in-game with <b>Q</b> or <b>E</b>. Free during
+                testing.
               </p>
               {ABILITIES.map((a) => {
                 const equipped = shop.ability === a.id;
                 return (
-                  <div key={a.id} className="flex items-center gap-3 bg-neutral-900/60 rounded-lg p-3">
+                  <div
+                    key={a.id}
+                    className="flex items-center gap-3 bg-neutral-900/60 rounded-lg p-3"
+                  >
                     <div className="h-12 w-12 rounded-full bg-neutral-800 border-2 border-neutral-600 flex items-center justify-center text-xl shrink-0">
                       {a.icon}
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold text-sm">
-                        {a.name} <span className="text-neutral-500 font-normal">· {a.cooldown}s cooldown</span>
+                        {a.name}{" "}
+                        <span className="text-neutral-500 font-normal">
+                          · {a.cooldown}s cooldown
+                        </span>
                       </p>
                       <p className="text-xs text-neutral-400">{a.description}</p>
                       <p className="text-[11px] text-yellow-500/80">{priceLabel(a.listPrice)}</p>
@@ -165,7 +185,10 @@ export function ShopPanel({
                 const owned = shop.owned.includes(a.id) || effectivePrice(a.price) === 0;
                 const equipped = shop.anthem === a.id;
                 return (
-                  <div key={a.id} className="flex items-center gap-3 bg-neutral-900/60 rounded-lg p-3">
+                  <div
+                    key={a.id}
+                    className="flex items-center gap-3 bg-neutral-900/60 rounded-lg p-3"
+                  >
                     <div className="h-12 w-12 rounded-lg bg-neutral-800 flex items-center justify-center text-xl shrink-0">
                       {a.icon}
                     </div>
@@ -210,7 +233,10 @@ export function ShopPanel({
                 const owned = shop.owned.includes(r.id) || cost === 0;
                 const equipped = r.kind === "skin" ? shop.skin === r.id : shop.explosion === r.id;
                 return (
-                  <div key={r.id} className="flex items-center gap-3 bg-neutral-900/60 rounded-lg p-3">
+                  <div
+                    key={r.id}
+                    className="flex items-center gap-3 bg-neutral-900/60 rounded-lg p-3"
+                  >
                     {r.preview}
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold text-sm truncate">{r.name}</p>

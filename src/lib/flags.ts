@@ -9,7 +9,6 @@ export interface FlagSpec {
   accent2?: string;
 }
 
-
 export interface DrawableSkin {
   color: string;
   flag?: FlagSpec;
@@ -228,7 +227,6 @@ export function drawSkin(
         star(sx, sy, size * fr, nz ? 5 : 7, nz ? starColor : "#ffffff");
       }
     }
-
   }
 
   ctx.restore();
