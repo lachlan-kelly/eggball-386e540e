@@ -51,8 +51,8 @@ export const SKINS: SkinItem[] = [
   { id: "neon", name: "Neon", price: 1000, color: "#c6ff00" },
   { id: "sand", name: "Sand", price: 1000, color: "#e4c98a" },
   // ---- Country skins ----
-  { id: "flag-au", name: "Australia", price: 1000, color: "#00247d", flag: { type: "canton", colors: ["#00247d", "#00247d"], accent: "#00247d", accent2: "#ffffff" } },
-  { id: "flag-nz", name: "New Zealand", price: 1000, color: "#00247d", flag: { type: "canton", colors: ["#00247d", "#00247d"], accent: "#00247d", accent2: "#cc142b" } },
+  { id: "flag-au", name: "Australia", price: 1000, color: "#00247d", flag: { type: "ensign", colors: ["#00247d"], accent: "#ffffff" } },
+  { id: "flag-nz", name: "New Zealand", price: 1000, color: "#00247d", flag: { type: "ensign", colors: ["#00247d"], accent: "#cc142b", accent2: "nz" } },
   { id: "flag-us", name: "United States", price: 1000, color: "#b22234", flag: { type: "canton", colors: ["#b22234", "#ffffff", "#b22234", "#ffffff", "#b22234", "#ffffff"], accent: "#3c3b6e", accent2: "#ffffff" } },
   { id: "flag-gb", name: "United Kingdom", price: 1000, color: "#00247d", flag: { type: "cross", colors: ["#00247d"], accent: "#cf142b", accent2: "#ffffff" } },
   { id: "flag-fr", name: "France", price: 1000, color: "#0055a4", flag: { type: "vbands", colors: ["#0055a4", "#ffffff", "#ef4135"] } },
@@ -237,15 +237,6 @@ export const ABILITIES: AbilityItem[] = [
     description: "Instantly trade places with the closest opponent.",
     cooldown: 18,
   },
-  {
-    id: "rush",
-    name: "Rush",
-    price: 13000,
-    listPrice: 13000,
-    icon: "💨",
-    description: "Big speed boost for a few seconds, leaving ghost trails behind you.",
-    cooldown: 13,
-  },
 
   {
     id: "gamble",
@@ -264,15 +255,6 @@ export const ABILITIES: AbilityItem[] = [
     icon: "🧲",
     description: "Drag a nearby ball toward you until it reaches your feet. Short range.",
     cooldown: 9,
-  },
-  {
-    id: "debug",
-    name: "Debug",
-    price: 44000,
-    listPrice: 44000,
-    icon: "🐛",
-    description: "Glitch out for a moment, then teleport to a random spot near the ball.",
-    cooldown: 16,
   },
   {
     id: "rewind",
@@ -318,8 +300,8 @@ const FREEBIES = [
   "default",
   "none",
   "anthem-none",
-  ...ABILITIES.map((a) => a.id),
-  ...(FREE_MODE ? [...SKINS.map((s) => s.id), ...EXPLOSIONS.map((e) => e.id), ...ANTHEMS.map((a) => a.id)] : []),
+  "dash", // starter ability — everything else is earned
+  ...(FREE_MODE ? [...SKINS.map((s) => s.id), ...EXPLOSIONS.map((e) => e.id), ...ANTHEMS.map((a) => a.id), ...ABILITIES.map((a) => a.id)] : []),
 ];
 
 export const DEFAULT_SHOP: ShopState = {
@@ -345,7 +327,7 @@ export function loadShop(): ShopState {
       owned: Array.from(new Set([...(parsed.owned ?? []), ...FREEBIES])),
       skin: parsed.skin ?? "default",
       explosion: parsed.explosion ?? "none",
-      // "curl" was removed — fall back to dash for anyone who had it equipped.
+      // Removed abilities (curl / debug / rush) fall back to dash.
       ability: ABILITIES.some((a) => a.id === ability) ? ability : "dash",
       anthem: parsed.anthem ?? "anthem-none",
       name: typeof parsed.name === "string" ? parsed.name : "",
