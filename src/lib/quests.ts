@@ -1,12 +1,6 @@
 // Eggball daily / weekly quests with local persistence.
 
-export type QuestMetric =
-  | "goals"
-  | "wins"
-  | "abilities"
-  | "kicks"
-  | "powerKicks"
-  | "games";
+export type QuestMetric = "goals" | "wins" | "abilities" | "kicks" | "powerKicks" | "games";
 
 export interface Quest {
   id: string;

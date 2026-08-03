@@ -7,14 +7,39 @@ import { UpdateLogPanel } from "@/components/UpdateLogPanel";
 import { ScoreboardPanel } from "@/components/ScoreboardPanel";
 
 import { drawSkin } from "@/lib/flags";
-import { ABILITIES, GOAL_REWARD, WIN_REWARD, getAbility, getAnthem, getExplosion, getSkin, loadShop, saveShop, DEFAULT_SHOP, type AnthemItem, type EquipKind, type ShopState } from "@/lib/shop";
-import { addProgress, defaultQuests, loadQuests, refreshQuests, saveQuests, type QuestMetric, type QuestState } from "@/lib/quests";
+import {
+  ABILITIES,
+  GOAL_REWARD,
+  WIN_REWARD,
+  getAbility,
+  getAnthem,
+  getExplosion,
+  getSkin,
+  loadShop,
+  saveShop,
+  DEFAULT_SHOP,
+  type AnthemItem,
+  type EquipKind,
+  type ShopState,
+} from "@/lib/shop";
+import {
+  addProgress,
+  defaultQuests,
+  loadQuests,
+  refreshQuests,
+  saveQuests,
+  type QuestMetric,
+  type QuestState,
+} from "@/lib/quests";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "Eggball - Multiplayer Soccer" },
-      { name: "description", content: "Pick a team and play Eggball, a real-time multiplayer soccer game." },
+      {
+        name: "description",
+        content: "Pick a team and play Eggball, a real-time multiplayer soccer game.",
+      },
       { property: "og:title", content: "Eggball" },
       { property: "og:description", content: "Real-time multiplayer soccer. Red vs Blue." },
     ],
@@ -70,7 +95,6 @@ const SWAP_RANGE = 520;
 // between the two snapshots that bracket that time (classic snapshot interp).
 const RENDER_DELAY = 110; // ms
 const MAX_EXTRAPOLATE = 140; // ms of dead-reckoning if snapshots stop arriving
-
 
 type Team = "red" | "blue" | null;
 
@@ -129,7 +153,6 @@ function decodePlayer(p: PlayerState): PlayerState {
   return out as unknown as PlayerState;
 }
 
-
 /** One received network sample used for snapshot interpolation. */
 interface Sample {
   t: number;
@@ -164,7 +187,6 @@ interface BallState {
   freezeUntil?: number; // timestamp ms while the ball is frozen in place
 }
 
-
 interface Snapshot {
   t: number;
   bx: number;
@@ -176,7 +198,6 @@ interface Snapshot {
   my: number;
   hasMe: boolean;
 }
-
 
 interface GameState {
   ball: BallState;
@@ -191,7 +212,6 @@ interface GameState {
   celebrate: number; // seconds remaining of the goal-celebration camera
   celebrateId: string; // player id the camera zooms on
 }
-
 
 function makeId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -208,9 +228,19 @@ function EggballPage() {
   const [logOpen, setLogOpen] = useState(false);
   const [shop, setShop] = useState<ShopState>(DEFAULT_SHOP);
   const [quests, setQuests] = useState<QuestState>(defaultQuests);
-  const [score, setScore] = useState({ red: 0, blue: 0, timeLeft: GAME_LENGTH, countdown: 0, ended: false, winner: null as Team | "draw", intermission: 0 });
+  const [score, setScore] = useState({
+    red: 0,
+    blue: 0,
+    timeLeft: GAME_LENGTH,
+    countdown: 0,
+    ended: false,
+    winner: null as Team | "draw",
+    intermission: 0,
+  });
   const [boardOpen, setBoardOpen] = useState(false);
-  const [roster, setRoster] = useState<Array<{ id: string; name: string; team: "red" | "blue"; goals: number }>>([]);
+  const [roster, setRoster] = useState<
+    Array<{ id: string; name: string; team: "red" | "blue"; goals: number }>
+  >([]);
   const [teamCounts, setTeamCounts] = useState({ red: 0, blue: 0 });
   // 0..1 readiness of the equipped ability (1 = ready), plus armed / gamble roll state
   const [abilityUi, setAbilityUi] = useState({ frac: 1, armed: false, roll: 0 });
@@ -231,7 +261,6 @@ function EggballPage() {
     const blue = teamCounts.blue - (mine === "blue" ? 1 : 0) + (t === "blue" ? 1 : 0);
     return Math.abs(red - blue) <= TEAM_GAP;
   };
-
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const myIdRef = useRef<string>(makeId());
@@ -308,12 +337,18 @@ function EggballPage() {
   const getCtx = () => {
     if (typeof window === "undefined") return null;
     if (!audioCtxRef.current) {
-      const AC = (window.AudioContext || (window as any).webkitAudioContext);
+      const AC = window.AudioContext || (window as any).webkitAudioContext;
       if (AC) audioCtxRef.current = new AC();
     }
     return audioCtxRef.current;
   };
-  const playTone = (freq: number, dur: number, type: OscillatorType = "square", vol = 0.15, slideTo?: number) => {
+  const playTone = (
+    freq: number,
+    dur: number,
+    type: OscillatorType = "square",
+    vol = 0.15,
+    slideTo?: number,
+  ) => {
     const ctx = getCtx();
     if (!ctx) return;
     try {
@@ -321,7 +356,8 @@ function EggballPage() {
       const g = ctx.createGain();
       o.type = type;
       o.frequency.setValueAtTime(freq, ctx.currentTime);
-      if (slideTo !== undefined) o.frequency.exponentialRampToValueAtTime(slideTo, ctx.currentTime + dur);
+      if (slideTo !== undefined)
+        o.frequency.exponentialRampToValueAtTime(slideTo, ctx.currentTime + dur);
       g.gain.setValueAtTime(vol, ctx.currentTime);
       g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
       o.connect(g).connect(ctx.destination);
@@ -330,10 +366,16 @@ function EggballPage() {
     } catch {}
   };
   const sfxKick = () => playTone(320, 0.09, "square", 0.18, 140);
-  const sfxGoal = () => { playTone(660, 0.15, "sawtooth", 0.2, 880); setTimeout(() => playTone(880, 0.25, "sawtooth", 0.2, 1320), 120); };
+  const sfxGoal = () => {
+    playTone(660, 0.15, "sawtooth", 0.2, 880);
+    setTimeout(() => playTone(880, 0.25, "sawtooth", 0.2, 1320), 120);
+  };
   const sfxWhistle = () => playTone(1400, 0.35, "triangle", 0.15, 1800);
   const sfxPost = () => playTone(180, 0.06, "square", 0.15);
-  const sfxPower = () => { playTone(160, 0.22, "sawtooth", 0.22, 60); playTone(520, 0.18, "square", 0.14, 90); };
+  const sfxPower = () => {
+    playTone(160, 0.22, "sawtooth", 0.22, 60);
+    playTone(520, 0.18, "square", 0.14, 90);
+  };
   const sfxAbility = () => playTone(700, 0.12, "triangle", 0.14, 1200);
   const sfxRewind = () => playTone(900, 0.5, "sine", 0.16, 180);
 
@@ -366,8 +408,6 @@ function EggballPage() {
       }
     };
   }, []);
-
-
 
   useEffect(() => {
     const myId = myIdRef.current;
@@ -430,8 +470,18 @@ function EggballPage() {
     // from the same celebration event, and the host applies the pull)
     const blackhole = { until: 0, x: 0, y: 0 };
 
-
-    type Particle = { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; color: string; emoji?: string; ring?: boolean; size: number };
+    type Particle = {
+      x: number;
+      y: number;
+      vx: number;
+      vy: number;
+      life: number;
+      maxLife: number;
+      color: string;
+      emoji?: string;
+      ring?: boolean;
+      size: number;
+    };
     let particles: Particle[] = [];
 
     function spawnExplosion(x: number, y: number, explosionId?: string) {
@@ -440,35 +490,92 @@ function EggballPage() {
         for (let i = 0; i < 22; i++) {
           const a = Math.random() * Math.PI * 2;
           const sp = 120 + Math.random() * 320;
-          particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 120, life: 1.4, maxLife: 1.4, color: "#fff", emoji: ex.emojis![i % ex.emojis!.length], size: 20 + Math.random() * 16 });
+          particles.push({
+            x,
+            y,
+            vx: Math.cos(a) * sp,
+            vy: Math.sin(a) * sp - 120,
+            life: 1.4,
+            maxLife: 1.4,
+            color: "#fff",
+            emoji: ex.emojis![i % ex.emojis!.length],
+            size: 20 + Math.random() * 16,
+          });
         }
       } else if (ex.kind === "confetti") {
         for (let i = 0; i < 60; i++) {
           const a = Math.random() * Math.PI * 2;
           const sp = 100 + Math.random() * 420;
-          particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 160, life: 1.6, maxLife: 1.6, color: ex.colors![i % ex.colors!.length], size: 4 + Math.random() * 5 });
+          particles.push({
+            x,
+            y,
+            vx: Math.cos(a) * sp,
+            vy: Math.sin(a) * sp - 160,
+            life: 1.6,
+            maxLife: 1.6,
+            color: ex.colors![i % ex.colors!.length],
+            size: 4 + Math.random() * 5,
+          });
         }
       } else if (ex.kind === "firework") {
         for (let burst = 0; burst < 3; burst++) {
           for (let i = 0; i < 26; i++) {
             const a = (i / 26) * Math.PI * 2;
             const sp = 200 + burst * 90;
-            particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1.1 + burst * 0.2, maxLife: 1.1 + burst * 0.2, color: ex.colors![burst % ex.colors!.length], size: 4 });
+            particles.push({
+              x,
+              y,
+              vx: Math.cos(a) * sp,
+              vy: Math.sin(a) * sp,
+              life: 1.1 + burst * 0.2,
+              maxLife: 1.1 + burst * 0.2,
+              color: ex.colors![burst % ex.colors!.length],
+              size: 4,
+            });
           }
         }
       } else if (ex.kind === "money") {
         for (let i = 0; i < 34; i++) {
           const a = Math.random() * Math.PI * 2;
           const sp = 90 + Math.random() * 300;
-          particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 260, life: 1.8, maxLife: 1.8, color: ex.colors![i % ex.colors!.length], emoji: ex.emojis![i % ex.emojis!.length], size: 18 + Math.random() * 14 });
+          particles.push({
+            x,
+            y,
+            vx: Math.cos(a) * sp,
+            vy: Math.sin(a) * sp - 260,
+            life: 1.8,
+            maxLife: 1.8,
+            color: ex.colors![i % ex.colors!.length],
+            emoji: ex.emojis![i % ex.emojis!.length],
+            size: 18 + Math.random() * 14,
+          });
         }
       } else if (ex.kind === "blast") {
         for (let i = 0; i < 70; i++) {
           const a = Math.random() * Math.PI * 2;
           const sp = 150 + Math.random() * 520;
-          particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0.5 + Math.random() * 0.7, maxLife: 1.2, color: ex.colors![i % ex.colors!.length], size: 5 + Math.random() * 9 });
+          particles.push({
+            x,
+            y,
+            vx: Math.cos(a) * sp,
+            vy: Math.sin(a) * sp,
+            life: 0.5 + Math.random() * 0.7,
+            maxLife: 1.2,
+            color: ex.colors![i % ex.colors!.length],
+            size: 5 + Math.random() * 9,
+          });
         }
-        particles.push({ x, y, vx: 0, vy: 0, life: 0.5, maxLife: 0.5, color: "#ff7a1a", ring: true, size: 14 });
+        particles.push({
+          x,
+          y,
+          vx: 0,
+          vy: 0,
+          life: 0.5,
+          maxLife: 0.5,
+          color: "#ff7a1a",
+          ring: true,
+          size: 14,
+        });
       } else if (ex.kind === "blackhole") {
         blackhole.until = performance.now() + BLACKHOLE_TIME * 1000;
         blackhole.x = x;
@@ -476,12 +583,31 @@ function EggballPage() {
         for (let i = 0; i < 40; i++) {
           const a = Math.random() * Math.PI * 2;
           const r = 90 + Math.random() * 160;
-          particles.push({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r, vx: -Math.cos(a) * 260, vy: -Math.sin(a) * 260, life: 1.0, maxLife: 1.0, color: ex.colors![i % ex.colors!.length], size: 4 + Math.random() * 4 });
+          particles.push({
+            x: x + Math.cos(a) * r,
+            y: y + Math.sin(a) * r,
+            vx: -Math.cos(a) * 260,
+            vy: -Math.sin(a) * 260,
+            life: 1.0,
+            maxLife: 1.0,
+            color: ex.colors![i % ex.colors!.length],
+            size: 4 + Math.random() * 4,
+          });
         }
       }
       // Every explosion gets a shockwave ring
       const ringColor = ex.colors?.[0] ?? "#ffffff";
-      particles.push({ x, y, vx: 0, vy: 0, life: 0.7, maxLife: 0.7, color: ringColor, ring: true, size: 10 });
+      particles.push({
+        x,
+        y,
+        vx: 0,
+        vy: 0,
+        life: 0.7,
+        maxLife: 0.7,
+        color: ringColor,
+        ring: true,
+        size: 10,
+      });
     }
 
     function updateParticles(dt: number) {
@@ -499,11 +625,11 @@ function EggballPage() {
       particles = particles.filter((p) => p.life > 0);
     }
 
-
     const keys = new Set<string>();
     const keyDown = (e: KeyboardEvent) => {
       keys.add(e.key.toLowerCase());
-      if ([" ", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(e.key.toLowerCase())) e.preventDefault();
+      if ([" ", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(e.key.toLowerCase()))
+        e.preventDefault();
     };
     const keyUp = (e: KeyboardEvent) => keys.delete(e.key.toLowerCase());
     window.addEventListener("keydown", keyDown);
@@ -535,7 +661,13 @@ function EggballPage() {
         buf = [];
         bufs.set(decoded.id, buf);
       }
-      pushSample(buf, { t: performance.now(), x: decoded.x, y: decoded.y, vx: decoded.vx, vy: decoded.vy });
+      pushSample(buf, {
+        t: performance.now(),
+        x: decoded.x,
+        y: decoded.y,
+        vx: decoded.vx,
+        vy: decoded.vy,
+      });
       lastSeen.set(decoded.id, performance.now());
       knownIds.add(decoded.id);
     });
@@ -546,18 +678,26 @@ function EggballPage() {
       lastSeen.delete(payload.id);
       knownIds.delete(payload.id);
     });
-    channel.on("broadcast", { event: "kick" }, ({ payload }: { payload: { bx: number; by: number; bvx: number; bvy: number; id?: string } }) => {
-      // Only host authoritative on ball, but any client can announce a kick they applied.
-      if (hostId === myId) {
-        ball.x = payload.bx;
-        ball.y = payload.by;
-        ball.vx = payload.bvx;
-        ball.vy = payload.bvy;
-        ball.freezeUntil = 0;
-        ballKickedAt = performance.now();
-        if (payload.id) lastTouchId = payload.id;
-      }
-    });
+    channel.on(
+      "broadcast",
+      { event: "kick" },
+      ({
+        payload,
+      }: {
+        payload: { bx: number; by: number; bvx: number; bvy: number; id?: string };
+      }) => {
+        // Only host authoritative on ball, but any client can announce a kick they applied.
+        if (hostId === myId) {
+          ball.x = payload.bx;
+          ball.y = payload.by;
+          ball.vx = payload.bvx;
+          ball.vy = payload.bvy;
+          ball.freezeUntil = 0;
+          ballKickedAt = performance.now();
+          if (payload.id) lastTouchId = payload.id;
+        }
+      },
+    );
     channel.on("broadcast", { event: "freeze" }, () => {
       if (hostId === myId) {
         // Remote clocks differ — freeze for the standard duration from now.
@@ -581,26 +721,38 @@ function EggballPage() {
       rewindFxUntil = performance.now() + REWIND_FX_MS;
     });
     // Swap: the caster moved itself already; the target moves itself here.
-    channel.on("broadcast", { event: "swap" }, ({ payload }: { payload: { targetId: string; x: number; y: number } }) => {
-      if (payload.targetId !== myId) return;
-      const me = getMyPlayer();
-      if (!me) return;
-      me.x = payload.x;
-      me.y = payload.y;
-      swapFxUntil = performance.now() + 450;
-      playTone(880, 0.16, "sine", 0.14, 220);
-    });
+    channel.on(
+      "broadcast",
+      { event: "swap" },
+      ({ payload }: { payload: { targetId: string; x: number; y: number } }) => {
+        if (payload.targetId !== myId) return;
+        const me = getMyPlayer();
+        if (!me) return;
+        me.x = payload.x;
+        me.y = payload.y;
+        swapFxUntil = performance.now() + 450;
+        playTone(880, 0.16, "sine", 0.14, 220);
+      },
+    );
     // Chain: the target reels itself toward the caster for the chain duration.
-    channel.on("broadcast", { event: "chain" }, ({ payload }: { payload: { targetId: string; byId: string } }) => {
-      if (payload.targetId !== myId) return;
-      chainedBy = payload.byId;
-      chainedUntil = performance.now() + CHAIN_TIME * 1000;
-    });
+    channel.on(
+      "broadcast",
+      { event: "chain" },
+      ({ payload }: { payload: { targetId: string; byId: string } }) => {
+        if (payload.targetId !== myId) return;
+        chainedBy = payload.byId;
+        chainedUntil = performance.now() + CHAIN_TIME * 1000;
+      },
+    );
     // Host tells everyone to line up for kickoff; each client places itself.
-    channel.on("broadcast", { event: "reset" }, ({ payload }: { payload: { spots: Record<string, { x: number; y: number }> } }) => {
-      if (hostId === myId) return;
-      applyReset(payload.spots);
-    });
+    channel.on(
+      "broadcast",
+      { event: "reset" },
+      ({ payload }: { payload: { spots: Record<string, { x: number; y: number }> } }) => {
+        if (hostId === myId) return;
+        applyReset(payload.spots);
+      },
+    );
 
     // Someone just joined and is asking everyone to re-announce themselves.
     channel.on("broadcast", { event: "hello" }, () => {
@@ -617,11 +769,19 @@ function EggballPage() {
       ballTarget.y = payload.ball.y;
       ballTarget.vx = payload.ball.vx;
       ballTarget.vy = payload.ball.vy;
-      pushSample(ballBuf, { t: performance.now(), x: payload.ball.x, y: payload.ball.y, vx: payload.ball.vx, vy: payload.ball.vy });
+      pushSample(ballBuf, {
+        t: performance.now(),
+        x: payload.ball.x,
+        y: payload.ball.y,
+        vx: payload.ball.vx,
+        vy: payload.ball.vy,
+      });
       ball.vx = payload.ball.vx;
       ball.vy = payload.ball.vy;
-      ball.freezeUntil = payload.ball.freezeUntil ? performance.now() + payload.ball.freezeUntil : 0;
-      
+      ball.freezeUntil = payload.ball.freezeUntil
+        ? performance.now() + payload.ball.freezeUntil
+        : 0;
+
       scoreRed = payload.scoreRed;
       scoreBlue = payload.scoreBlue;
       timeLeft = payload.timeLeft;
@@ -632,9 +792,16 @@ function EggballPage() {
       celebrate = payload.celebrate ?? 0;
       celebrateId = payload.celebrateId ?? "";
       hostId = payload.hostId;
-      setScore({ red: scoreRed, blue: scoreBlue, timeLeft, countdown, ended, winner, intermission });
+      setScore({
+        red: scoreRed,
+        blue: scoreBlue,
+        timeLeft,
+        countdown,
+        ended,
+        winner,
+        intermission,
+      });
     });
-
 
     channel.on("presence", { event: "sync" }, () => {
       const state = channel.presenceState() as Record<string, Array<{ id: string }>>;
@@ -669,7 +836,10 @@ function EggballPage() {
         setConnected(true);
         // Ask everyone already in the room to announce themselves.
         channel.send({ type: "broadcast", event: "hello", payload: { id: myId } });
-        setTimeout(() => channel.send({ type: "broadcast", event: "hello", payload: { id: myId } }), 800);
+        setTimeout(
+          () => channel.send({ type: "broadcast", event: "hello", payload: { id: myId } }),
+          800,
+        );
       }
     });
 
@@ -792,8 +962,6 @@ function EggballPage() {
       return me;
     }
 
-
-
     function tick() {
       if (!running) return;
       const now = performance.now();
@@ -883,9 +1051,6 @@ function EggballPage() {
         }
       }
 
-
-
-
       // Move my player
       const me = getMyPlayer();
       const canMove = !ended && (hostId === myId ? countdown <= 0 : countdown <= 0);
@@ -930,14 +1095,22 @@ function EggballPage() {
               if (!target) return; // nobody in range: no cooldown burned
               me.chainUntil = now + CHAIN_TIME * 1000;
               me.chainTargetId = target.id;
-              channel.send({ type: "broadcast", event: "chain", payload: { targetId: target.id, byId: myId } });
+              channel.send({
+                type: "broadcast",
+                event: "chain",
+                payload: { targetId: target.id, byId: myId },
+              });
               playTone(140, 0.3, "square", 0.14, 420);
             } else if (ab.id === "swap") {
               const target = nearestOther(me, true);
               if (!target) return;
               const tx = target.x;
               const ty = target.y;
-              channel.send({ type: "broadcast", event: "swap", payload: { targetId: target.id, x: me.x, y: me.y } });
+              channel.send({
+                type: "broadcast",
+                event: "swap",
+                payload: { targetId: target.id, x: me.x, y: me.y },
+              });
               target.x = me.x;
               target.y = me.y;
               const tb = bufs.get(target.id);
@@ -960,12 +1133,20 @@ function EggballPage() {
               playTone(1200, 0.35, "sine", 0.14, 300);
               for (let i = 0; i < 24; i++) {
                 const a = Math.random() * Math.PI * 2;
-                particles.push({ x: ball.x, y: ball.y, vx: Math.cos(a) * 160, vy: Math.sin(a) * 160, life: 0.6, maxLife: 0.6, color: "#bfefff", size: 3 + Math.random() * 3 });
+                particles.push({
+                  x: ball.x,
+                  y: ball.y,
+                  vx: Math.cos(a) * 160,
+                  vy: Math.sin(a) * 160,
+                  life: 0.6,
+                  maxLife: 0.6,
+                  color: "#bfefff",
+                  size: 3 + Math.random() * 3,
+                });
               }
             } else if (ab.id === "bumper") {
               me.bumperUntil = now + BUMPER_TIME * 1000;
               playTone(420, 0.25, "square", 0.15, 900);
-
             } else if (ab.id === "gamble") {
               // Weighted roll: 1 is common, 10 is rare.
               const r = Math.random();
@@ -1013,7 +1194,6 @@ function EggballPage() {
         const dashing = (me.dashUntil ?? 0) > now;
         let tvx = dashing ? dashDirX * DASH_SPEED : ix * PLAYER_SPEED;
         let tvy = dashing ? dashDirY * DASH_SPEED : iy * PLAYER_SPEED;
-
 
         // If touching another player, slowdown factor based on pushing against them
         for (const other of players.values()) {
@@ -1123,7 +1303,16 @@ function EggballPage() {
               playTone(220 + roll * 80, 0.24, "sawtooth", 0.18, 120);
               for (let i = 0; i < roll * 5; i++) {
                 const a = Math.random() * Math.PI * 2;
-                particles.push({ x: ball.x, y: ball.y, vx: Math.cos(a) * 180, vy: Math.sin(a) * 180, life: 0.5, maxLife: 0.5, color: "#facc15", size: 3 });
+                particles.push({
+                  x: ball.x,
+                  y: ball.y,
+                  vx: Math.cos(a) * 180,
+                  vy: Math.sin(a) * 180,
+                  life: 0.5,
+                  maxLife: 0.5,
+                  color: "#facc15",
+                  size: 3,
+                });
               }
             }
             const power = KICK_POWER * (powered ? POWER_MULT : 1) * gambleMult;
@@ -1135,9 +1324,28 @@ function EggballPage() {
               for (let i = 0; i < 18; i++) {
                 const a = Math.atan2(ny, nx) + (Math.random() - 0.5) * 1.2;
                 const sp = 80 + Math.random() * 200;
-                particles.push({ x: ball.x, y: ball.y, vx: -Math.cos(a) * sp, vy: -Math.sin(a) * sp, life: 0.45, maxLife: 0.45, color: "#ffe066", size: 3 + Math.random() * 3 });
+                particles.push({
+                  x: ball.x,
+                  y: ball.y,
+                  vx: -Math.cos(a) * sp,
+                  vy: -Math.sin(a) * sp,
+                  life: 0.45,
+                  maxLife: 0.45,
+                  color: "#ffe066",
+                  size: 3 + Math.random() * 3,
+                });
               }
-              particles.push({ x: ball.x, y: ball.y, vx: 0, vy: 0, life: 0.4, maxLife: 0.4, color: "#ffe066", ring: true, size: 8 });
+              particles.push({
+                x: ball.x,
+                y: ball.y,
+                vx: 0,
+                vy: 0,
+                life: 0.4,
+                maxLife: 0.4,
+                color: "#ffe066",
+                ring: true,
+                size: 8,
+              });
             } else {
               sfxKick();
             }
@@ -1157,9 +1365,6 @@ function EggballPage() {
                 payload: { bx: ball.x, by: ball.y, bvx: nvx, bvy: nvy, id: myId },
               });
             }
-
-
-
           }
         }
       }
@@ -1188,7 +1393,6 @@ function EggballPage() {
           ball.vx += (dx / d) * MAGNET_ACCEL * dt;
           ball.vy += (dy / d) * MAGNET_ACCEL * dt;
 
-
           lastTouchId = p.id;
         }
 
@@ -1205,9 +1409,6 @@ function EggballPage() {
           for (const p of players.values()) pull(p);
         }
 
-
-
-
         // Apply friction
         ball.vx *= Math.pow(BALL_FRICTION, dt * 60);
         ball.vy *= Math.pow(BALL_FRICTION, dt * 60);
@@ -1219,8 +1420,6 @@ function EggballPage() {
         }
         ball.x += ball.vx * dt;
         ball.y += ball.vy * dt;
-
-
 
         // Wall collision - but goal openings on left/right.
         // A goal only counts when the WHOLE ball is past the goal line.
@@ -1332,7 +1531,16 @@ function EggballPage() {
               lastTouchId = p.id;
               for (let i = 0; i < 16; i++) {
                 const a = Math.random() * Math.PI * 2;
-                particles.push({ x: ball.x, y: ball.y, vx: Math.cos(a) * 220, vy: Math.sin(a) * 220, life: 0.4, maxLife: 0.4, color: "#fb923c", size: 4 });
+                particles.push({
+                  x: ball.x,
+                  y: ball.y,
+                  vx: Math.cos(a) * 220,
+                  vy: Math.sin(a) * 220,
+                  life: 0.4,
+                  maxLife: 0.4,
+                  color: "#fb923c",
+                  size: 4,
+                });
               }
               if (p.id === myId) sfxPower();
               continue;
@@ -1362,7 +1570,6 @@ function EggballPage() {
                 ball.vy = 0;
               }
             }
-
 
             // Pinch detection: another player pressing into the ball from the opposite side,
             // AND neither contact is against a wall (pure player-vs-player pinch).
@@ -1413,7 +1620,6 @@ function EggballPage() {
         ball.vy = 0;
       }
 
-
       // Every kickoff (start of a round and after every goal) the ability
       // starts on full cooldown.
       if (prevCountdown > 0 && countdown <= 0) {
@@ -1445,11 +1651,13 @@ function EggballPage() {
 
         setAbilityUi({
           frac,
-          armed: (me?.gambleUntil ?? 0) > now || (me?.bumperUntil ?? 0) > now || (me?.invisUntil ?? 0) > now,
-          roll: (me?.gambleUntil ?? 0) > now ? me?.gambleRoll ?? 0 : 0,
+          armed:
+            (me?.gambleUntil ?? 0) > now ||
+            (me?.bumperUntil ?? 0) > now ||
+            (me?.invisUntil ?? 0) > now,
+          roll: (me?.gambleUntil ?? 0) > now ? (me?.gambleRoll ?? 0) : 0,
         });
       }
-
 
       // Broadcast my player state ~30Hz
       if (me && now - lastBroadcast > 33) {
@@ -1474,10 +1682,16 @@ function EggballPage() {
           celebrateId,
         };
         channel.send({ type: "broadcast", event: "state", payload: state });
-        setScore({ red: scoreRed, blue: scoreBlue, timeLeft, countdown, ended, winner, intermission });
+        setScore({
+          red: scoreRed,
+          blue: scoreBlue,
+          timeLeft,
+          countdown,
+          ended,
+          winner,
+          intermission,
+        });
       }
-
-
 
       // Purge stale players
       for (const [id, t] of lastSeen) {
@@ -1721,7 +1935,14 @@ function EggballPage() {
       if (blackhole.until > now) {
         const bt = Math.max(0, (blackhole.until - now) / (BLACKHOLE_TIME * 1000));
         const rad = 80 * Math.sin(Math.min(1, bt) * Math.PI) + 16;
-        const grad = ctx.createRadialGradient(blackhole.x, blackhole.y, 2, blackhole.x, blackhole.y, rad);
+        const grad = ctx.createRadialGradient(
+          blackhole.x,
+          blackhole.y,
+          2,
+          blackhole.x,
+          blackhole.y,
+          rad,
+        );
         grad.addColorStop(0, "#000000");
         grad.addColorStop(0.65, "rgba(59,26,92,0.9)");
         grad.addColorStop(1, "rgba(155,93,229,0)");
@@ -1762,7 +1983,6 @@ function EggballPage() {
         ctx.stroke();
         ctx.restore();
       }
-
 
       // Power-kick charge meter: a circle growing inside the ball
       {
@@ -1823,7 +2043,13 @@ function EggballPage() {
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         const text =
-          winner === "draw" ? "Draw!" : winner === "red" ? "Red wins!" : winner === "blue" ? "Blue wins!" : "";
+          winner === "draw"
+            ? "Draw!"
+            : winner === "red"
+              ? "Red wins!"
+              : winner === "blue"
+                ? "Blue wins!"
+                : "";
         ctx.fillText(text, FIELD_W / 2, FIELD_H / 2 - 30);
         ctx.font = "22px sans-serif";
         ctx.fillText(`Final: Red ${scoreRed} - ${scoreBlue} Blue`, FIELD_W / 2, FIELD_H / 2 + 20);
@@ -1869,8 +2095,6 @@ function EggballPage() {
         ctx.restore();
       }
 
-
-
       // GOAL! banner drawn in screen space (unaffected by the zoom camera)
       if (celebrate > 0) {
         const scorer = celebrateId ? players.get(celebrateId) : undefined;
@@ -1895,7 +2119,6 @@ function EggballPage() {
       }
     }
 
-
     requestAnimationFrame(tick);
 
     return () => {
@@ -1908,7 +2131,9 @@ function EggballPage() {
   }, []);
 
   const mm = Math.floor(score.timeLeft / 60);
-  const ss = Math.floor(score.timeLeft % 60).toString().padStart(2, "0");
+  const ss = Math.floor(score.timeLeft % 60)
+    .toString()
+    .padStart(2, "0");
 
   const joinWith = (t: Exclude<Team, null>) => {
     const trimmed = nameInput.trim().slice(0, 12);
@@ -1958,7 +2183,17 @@ function EggballPage() {
     addMoneyRef.current(reward);
   };
 
-  const AbilityDial = ({ id, frac, armed, roll }: { id: string; frac: number; armed: boolean; roll: number }) => {
+  const AbilityDial = ({
+    id,
+    frac,
+    armed,
+    roll,
+  }: {
+    id: string;
+    frac: number;
+    armed: boolean;
+    roll: number;
+  }) => {
     const ability = ABILITIES.find((a) => a.id === id);
     if (!ability) return null;
     const R = 26;
@@ -1967,7 +2202,14 @@ function EggballPage() {
     return (
       <div className="relative h-16 w-16">
         <svg viewBox="0 0 64 64" className="absolute inset-0 -rotate-90">
-          <circle cx="32" cy="32" r={R} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="5" />
+          <circle
+            cx="32"
+            cy="32"
+            r={R}
+            fill="none"
+            stroke="rgba(255,255,255,0.15)"
+            strokeWidth="5"
+          />
           <circle
             cx="32"
             cy="32"
@@ -2024,7 +2266,6 @@ function EggballPage() {
               Shop
             </button>
           )}
-
         </div>
         {/* Centre scoreboard */}
         <div className="flex items-center justify-center gap-6 text-2xl font-bold">
@@ -2067,7 +2308,6 @@ function EggballPage() {
             Updates
           </button>
         </div>
-
       </div>
       <div
         className="relative"
@@ -2084,7 +2324,12 @@ function EggballPage() {
         />
         {joined && !shopOpen && !questsOpen && !logOpen && !showMenu && (
           <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-4">
-            <AbilityDial id={shop.ability} frac={abilityUi.frac} armed={abilityUi.armed} roll={abilityUi.roll} />
+            <AbilityDial
+              id={shop.ability}
+              frac={abilityUi.frac}
+              armed={abilityUi.armed}
+              roll={abilityUi.roll}
+            />
           </div>
         )}
 
@@ -2105,7 +2350,9 @@ function EggballPage() {
             onClose={() => setQuestsOpen(false)}
           />
         )}
-        {logOpen && !shopOpen && !questsOpen && <UpdateLogPanel onClose={() => setLogOpen(false)} />}
+        {logOpen && !shopOpen && !questsOpen && (
+          <UpdateLogPanel onClose={() => setLogOpen(false)} />
+        )}
         {boardOpen && !shopOpen && !questsOpen && !logOpen && (
           <ScoreboardPanel
             roster={roster}
@@ -2116,12 +2363,12 @@ function EggballPage() {
         )}
 
         {showMenu && !shopOpen && !questsOpen && !logOpen && !boardOpen && (
-
           <div className="absolute inset-0 flex items-center justify-center bg-black/70 rounded-lg">
             <div className="bg-neutral-800 rounded-xl p-8 shadow-2xl text-center max-w-sm">
               <h1 className="text-3xl font-bold mb-2">Eggball</h1>
               <p className="text-neutral-400 mb-4 text-sm">
-                Pick a team to jump in. WASD/arrows to move. X or Space to kick. Q or E for your ability.
+                Pick a team to jump in. WASD/arrows to move. X or Space to kick. Q or E for your
+                ability.
               </p>
               <input
                 type="text"
@@ -2170,5 +2417,3 @@ function EggballPage() {
     </div>
   );
 }
-
-
