@@ -1,13 +1,14 @@
 // Shared skin / flag renderer used by both the game canvas and the shop preview.
 
 export interface FlagSpec {
-  type: "bands" | "vbands" | "circle" | "cross" | "canton" | "diagonal" | "diamond";
+  type: "bands" | "vbands" | "circle" | "cross" | "canton" | "diagonal" | "diamond" | "ensign";
   colors: string[];
-  /** primary accent (circle, cross, canton fill, diamond) */
+  /** primary accent (circle, cross, canton fill, diamond, ensign star colour) */
   accent?: string;
-  /** secondary accent (canton cross, diamond inner disc) */
+  /** secondary accent (canton cross, diamond inner disc, ensign variant "nz") */
   accent2?: string;
 }
+
 
 export interface DrawableSkin {
   color: string;
