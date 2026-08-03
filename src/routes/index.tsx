@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { ShopPanel } from "@/components/ShopPanel";
 import { QuestsPanel } from "@/components/QuestsPanel";
 import { UpdateLogPanel } from "@/components/UpdateLogPanel";
-import { LeaderboardPanel } from "@/components/LeaderboardPanel";
+import { ScoreboardPanel } from "@/components/ScoreboardPanel";
 
 import { drawSkin } from "@/lib/flags";
 import { ABILITIES, GOAL_REWARD, WIN_REWARD, getAbility, getAnthem, getExplosion, getSkin, loadShop, saveShop, DEFAULT_SHOP, type AnthemItem, type EquipKind, type ShopState } from "@/lib/shop";
@@ -36,7 +36,7 @@ const POST_R = 8;
 const PLAYER_SPEED = 190; // px/sec
 const BALL_FRICTION = 0.988; // higher = the ball rolls further
 const BALL_MAX = 1100;
-const KICK_POWER = 760;
+const KICK_POWER = 620;
 const KICK_DURATION = 0.18; // seconds
 const KICK_REACH = 10; // extra px beyond touching to still land a kick
 const GAME_LENGTH = 5 * 60; // seconds
@@ -57,18 +57,19 @@ const BUMPER_TIME = 5; // seconds of auto power-kick on contact
 const REWIND_FX_MS = 900; // duration of the rewind screen effect
 const GAMBLE_WINDOW = 8; // seconds to use the rolled kick
 const GAMBLE_MAX_MULT = 4.5; // roll of 10 = full-field shot
-const DEBUG_GLITCH = 1.1; // seconds of glitching before the teleport
 const REWIND_SECONDS = 3;
 const HISTORY_STEP = 100; // ms between rewind snapshots
 const BLACKHOLE_TIME = 1.6;
 const BLACKHOLE_PULL = 900;
 const INVIS_TIME = 3; // seconds of invisibility
-const RUSH_TIME = 2.4; // seconds of the Rush speed boost
-const RUSH_MULT = 1.85; // Rush speed multiplier
 const CHAIN_TIME = 1.1; // seconds the chain reels a player in
 const CHAIN_RANGE = 420;
 const CHAIN_PULL = 560; // px/sec the chained player is dragged
 const SWAP_RANGE = 520;
+// Netcode: remote entities are rendered this far in the past and interpolated
+// between the two snapshots that bracket that time (classic snapshot interp).
+const RENDER_DELAY = 110; // ms
+const MAX_EXTRAPOLATE = 140; // ms of dead-reckoning if snapshots stop arriving
 
 
 type Team = "red" | "blue" | null;
@@ -94,11 +95,10 @@ interface PlayerState {
   bumperUntil?: number; // timestamp ms while Bumper auto-power-kicks on contact
   gambleUntil?: number; // timestamp ms while a gamble roll is loaded
   gambleRoll?: number; // 1..10 rolled kick power
-  glitchUntil?: number; // timestamp ms while the Debug glitch plays
   invisUntil?: number; // timestamp ms while faded out
-  rushUntil?: number; // timestamp ms while Rush is boosting
   chainUntil?: number; // timestamp ms while our chain is reeling someone in
   chainTargetId?: string; // who the chain is hooked to
+  goals?: number; // goals scored this session (scoreboard)
 }
 
 /** Timer fields that must travel as "ms remaining" — clocks differ per client. */
@@ -108,9 +108,7 @@ const TIMER_KEYS = [
   "dashUntil",
   "bumperUntil",
   "gambleUntil",
-  "glitchUntil",
   "invisUntil",
-  "rushUntil",
   "chainUntil",
 ] as const;
 
@@ -131,6 +129,32 @@ function decodePlayer(p: PlayerState): PlayerState {
   return out as unknown as PlayerState;
 }
 
+
+/** One received network sample used for snapshot interpolation. */
+interface Sample {
+  t: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+}
+
+/** Interpolate a buffer of samples at render time `rt` (ms, perf clock). */
+function sampleAt(buf: Sample[], rt: number): { x: number; y: number } | null {
+  if (buf.length === 0) return null;
+  if (rt <= buf[0].t) return { x: buf[0].x, y: buf[0].y };
+  for (let i = buf.length - 1; i > 0; i--) {
+    const b = buf[i];
+    const a = buf[i - 1];
+    if (rt >= a.t && rt <= b.t) {
+      const u = (rt - a.t) / Math.max(1, b.t - a.t);
+      return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u };
+    }
+  }
+  const last = buf[buf.length - 1];
+  const ahead = Math.min(MAX_EXTRAPOLATE, rt - last.t) / 1000;
+  return { x: last.x + last.vx * ahead, y: last.y + last.vy * ahead };
+}
 
 interface BallState {
   x: number;
@@ -186,6 +210,7 @@ function EggballPage() {
   const [quests, setQuests] = useState<QuestState>(defaultQuests);
   const [score, setScore] = useState({ red: 0, blue: 0, timeLeft: GAME_LENGTH, countdown: 0, ended: false, winner: null as Team | "draw", intermission: 0 });
   const [boardOpen, setBoardOpen] = useState(false);
+  const [roster, setRoster] = useState<Array<{ id: string; name: string; team: "red" | "blue"; goals: number }>>([]);
   const [teamCounts, setTeamCounts] = useState({ red: 0, blue: 0 });
   // 0..1 readiness of the equipped ability (1 = ready), plus armed / gamble roll state
   const [abilityUi, setAbilityUi] = useState({ frac: 1, armed: false, roll: 0 });
@@ -350,11 +375,17 @@ function EggballPage() {
     /** Latest network positions for remote players; rendering lerps toward these. */
     const targets = new Map<string, PlayerState>();
     const lastSeen = new Map<string, number>();
+    /** Snapshot buffers for interpolation (remote players + the ball). */
+    const bufs = new Map<string, Sample[]>();
+    const ballBuf: Sample[] = [];
+    const pushSample = (buf: Sample[], s: Sample) => {
+      if (buf.length && s.t <= buf[buf.length - 1].t) s.t = buf[buf.length - 1].t + 1;
+      buf.push(s);
+      if (buf.length > 20) buf.splice(0, buf.length - 20);
+    };
     const ball: BallState = { x: FIELD_W / 2, y: FIELD_H / 2, vx: 0, vy: 0 };
     /** Host's authoritative ball position (non-hosts smooth toward it). */
     const ballTarget = { x: FIELD_W / 2, y: FIELD_H / 2, vx: 0, vy: 0 };
-    let botTick = 0;
-    let botAbilityAt = 0;
 
     let scoreRed = 0;
     let scoreBlue = 0;
@@ -390,7 +421,6 @@ function EggballPage() {
     let lastGoalAt = 0;
     let lastHistory = 0;
     const history: Snapshot[] = [];
-    let glitchTeleportAt = 0;
     let rewindFxUntil = 0;
     let swapFxUntil = 0;
     let chainedBy = "";
@@ -500,12 +530,19 @@ function EggballPage() {
         Object.assign(existing, decoded, { x: existing.x, y: existing.y });
       }
       targets.set(decoded.id, { ...decoded });
+      let buf = bufs.get(decoded.id);
+      if (!buf) {
+        buf = [];
+        bufs.set(decoded.id, buf);
+      }
+      pushSample(buf, { t: performance.now(), x: decoded.x, y: decoded.y, vx: decoded.vx, vy: decoded.vy });
       lastSeen.set(decoded.id, performance.now());
       knownIds.add(decoded.id);
     });
     channel.on("broadcast", { event: "leave" }, ({ payload }: { payload: { id: string } }) => {
       players.delete(payload.id);
       targets.delete(payload.id);
+      bufs.delete(payload.id);
       lastSeen.delete(payload.id);
       knownIds.delete(payload.id);
     });
@@ -580,6 +617,7 @@ function EggballPage() {
       ballTarget.y = payload.ball.y;
       ballTarget.vx = payload.ball.vx;
       ballTarget.vy = payload.ball.vy;
+      pushSample(ballBuf, { t: performance.now(), x: payload.ball.x, y: payload.ball.y, vx: payload.ball.vx, vy: payload.ball.vy });
       ball.vx = payload.ball.vx;
       ball.vy = payload.ball.vy;
       ball.freezeUntil = payload.ball.freezeUntil ? performance.now() + payload.ball.freezeUntil : 0;
@@ -622,7 +660,7 @@ function EggballPage() {
     channel.on("presence", { event: "join" }, () => {
       // Re-announce ourselves so the newcomer sees us immediately.
       const me = getMyPlayer();
-      if (me) channel.send({ type: "broadcast", event: "player", payload: { ...me } });
+      if (me) void sendPlayer(me);
     });
 
     channel.subscribe(async (status) => {
@@ -677,6 +715,8 @@ function EggballPage() {
         }
       }
       chainedUntil = 0;
+      bufs.clear();
+      ballBuf.length = 0;
       ball.x = FIELD_W / 2;
       ball.y = FIELD_H / 2;
       ball.vx = 0;
@@ -802,19 +842,28 @@ function EggballPage() {
         if (goalCooldown > 0) goalCooldown = Math.max(0, goalCooldown - dt);
       }
 
-      // Smooth remote players toward their last received network position.
-      for (const [id, t] of targets) {
-        const p = players.get(id);
-        if (!p || id === myId) continue;
-        const k = Math.min(1, dt * 14);
-        p.x += (t.x - p.x) * k;
-        p.y += (t.y - p.y) * k;
+      // ---- Snapshot interpolation ----
+      // Remote entities are drawn RENDER_DELAY ms in the past, interpolated
+      // between the two snapshots bracketing that time. This is what keeps
+      // multiplayer smooth instead of chasing the newest packet.
+      const renderTime = now - RENDER_DELAY;
+      for (const [id, p] of players) {
+        if (id === myId) continue;
+        const buf = bufs.get(id);
+        if (!buf) continue;
+        const s = sampleAt(buf, renderTime);
+        if (!s) continue;
+        const k = Math.min(1, dt * 30);
+        p.x += (s.x - p.x) * k;
+        p.y += (s.y - p.y) * k;
       }
-      // Non-hosts smooth the ball toward the host's authoritative position.
       if (hostId !== myId) {
-        const k = Math.min(1, dt * 16);
-        ball.x += (ballTarget.x - ball.x) * k;
-        ball.y += (ballTarget.y - ball.y) * k;
+        const s = sampleAt(ballBuf, renderTime);
+        if (s) {
+          const k = Math.min(1, dt * 30);
+          ball.x += (s.x - ball.x) * k;
+          ball.y += (s.y - ball.y) * k;
+        }
       }
 
       // Chain: if someone hooked us, reel ourselves toward them.
@@ -876,9 +925,6 @@ function EggballPage() {
             } else if (ab.id === "invisible") {
               me.invisUntil = now + INVIS_TIME * 1000;
               playTone(300, 0.35, "sine", 0.12, 80);
-            } else if (ab.id === "rush") {
-              me.rushUntil = now + RUSH_TIME * 1000;
-              playTone(220, 0.3, "sawtooth", 0.14, 900);
             } else if (ab.id === "chain") {
               const target = nearestOther(me, false);
               if (!target) return; // nobody in range: no cooldown burned
@@ -894,7 +940,8 @@ function EggballPage() {
               channel.send({ type: "broadcast", event: "swap", payload: { targetId: target.id, x: me.x, y: me.y } });
               target.x = me.x;
               target.y = me.y;
-              targets.get(target.id)?.id && Object.assign(targets.get(target.id)!, { x: me.x, y: me.y });
+              const tb = bufs.get(target.id);
+              if (tb) tb.length = 0;
               me.x = tx;
               me.y = ty;
               swapFxUntil = now + 450;
@@ -926,10 +973,6 @@ function EggballPage() {
               me.gambleRoll = roll;
               me.gambleUntil = now + GAMBLE_WINDOW * 1000;
               playTone(300 + roll * 70, 0.22, "square", 0.16, 200 + roll * 90);
-            } else if (ab.id === "debug") {
-              me.glitchUntil = now + DEBUG_GLITCH * 1000;
-              glitchTeleportAt = now + DEBUG_GLITCH * 1000;
-              playTone(90, 0.4, "square", 0.14, 1500);
             } else if (ab.id === "rewind") {
               // Cannot rewind past a goal — that would un-score it.
               const target = now - REWIND_SECONDS * 1000;
@@ -964,16 +1007,6 @@ function EggballPage() {
           if ((qDown && !prevQ) || (eDown && !prevE)) tryAbility();
           prevQ = qDown;
           prevE = eDown;
-        }
-
-        // Debug teleport: after the glitch, pop to a random spot near the ball
-        if (glitchTeleportAt && now >= glitchTeleportAt) {
-          glitchTeleportAt = 0;
-          const a = Math.random() * Math.PI * 2;
-          const r = 120 + Math.random() * 160;
-          me.x = Math.max(PLAYER_R, Math.min(FIELD_W - PLAYER_R, ball.x + Math.cos(a) * r));
-          me.y = Math.max(PLAYER_R, Math.min(FIELD_H - PLAYER_R, ball.y + Math.sin(a) * r));
-          playTone(1200, 0.12, "square", 0.14, 300);
         }
 
         // Target velocity (dash overrides speed along the dash direction)
@@ -1402,12 +1435,17 @@ function EggballPage() {
           else bc++;
         }
         setTeamCounts((c) => (c.red === rc && c.blue === bc ? c : { red: rc, blue: bc }));
+        setRoster(
+          Array.from(players.values())
+            .map((p) => ({ id: p.id, name: p.name || "Player", team: p.team, goals: p.goals ?? 0 }))
+            .sort((a, b) => b.goals - a.goals),
+        );
         const left = cooldownUntil.v - now;
         const frac = left <= 0 ? 1 : Math.max(0, Math.min(1, 1 - left / cooldownLen.v));
 
         setAbilityUi({
           frac,
-          armed: (me?.gambleUntil ?? 0) > now || (me?.bumperUntil ?? 0) > now || (me?.rushUntil ?? 0) > now || (me?.invisUntil ?? 0) > now,
+          armed: (me?.gambleUntil ?? 0) > now || (me?.bumperUntil ?? 0) > now || (me?.invisUntil ?? 0) > now,
           roll: (me?.gambleUntil ?? 0) > now ? me?.gambleRoll ?? 0 : 0,
         });
       }
@@ -1416,15 +1454,14 @@ function EggballPage() {
       // Broadcast my player state ~30Hz
       if (me && now - lastBroadcast > 33) {
         lastBroadcast = now;
-        const payload: PlayerState = { ...me };
-        channel.send({ type: "broadcast", event: "player", payload });
+        void sendPlayer(me);
       }
 
       // Host broadcasts game state ~30Hz (plus every bot it simulates)
       if (hostId === myId && now - lastStateBroadcast > 33) {
         lastStateBroadcast = now;
         const state: GameState = {
-          ball,
+          ball: { ...ball, freezeUntil: Math.max(0, (ball.freezeUntil ?? 0) - now) },
           scoreRed,
           scoreBlue,
           timeLeft,
@@ -1437,9 +1474,6 @@ function EggballPage() {
           celebrateId,
         };
         channel.send({ type: "broadcast", event: "state", payload: state });
-        for (const b of players.values()) {
-          if (b.id.startsWith("bot-")) channel.send({ type: "broadcast", event: "player", payload: { ...b } });
-        }
         setScore({ red: scoreRed, blue: scoreBlue, timeLeft, countdown, ended, winner, intermission });
       }
 
@@ -1460,6 +1494,8 @@ function EggballPage() {
         spawnExplosion(ball.x, ball.y, scorer?.explosion);
         playAnthemRef.current(getAnthem(scorer?.anthem));
         if (celebrateId === myId) {
+          const mineNow = getMyPlayer();
+          if (mineNow) mineNow.goals = (mineNow.goals ?? 0) + 1;
           addMoneyRef.current(GOAL_REWARD);
           bumpQuestRef.current("goals");
         }
@@ -1578,29 +1614,16 @@ function EggballPage() {
         const kicking = p.kickUntil > now;
         const skin = getSkin(p.skin);
         const teamColor = p.team === "red" ? "#e23c3c" : "#3c6ee2";
-        const glitching = (p.glitchUntil ?? 0) > now;
-        // Outer transform so the Debug glitch can shake / ghost the whole player
         ctx.save();
-        if (glitching) {
-          ctx.globalAlpha = 0.4 + Math.random() * 0.5;
-          ctx.translate((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14);
-        }
-        // Invisible: fade right down (teammates/self keep a faint outline)
-        if ((p.invisUntil ?? 0) > now) {
-          ctx.globalAlpha *= p.id === myId ? 0.35 : 0.08;
-        }
-        // Rush: ghost clones trailing behind the runner
-        if ((p.rushUntil ?? 0) > now) {
-          const sp = Math.hypot(p.vx, p.vy) || 1;
-          for (let g = 1; g <= 3; g++) {
-            ctx.save();
-            ctx.globalAlpha = 0.22 / g;
-            drawSkin(ctx, p.x - (p.vx / sp) * 16 * g, p.y - (p.vy / sp) * 16 * g, PLAYER_R, {
-              color: skin.color || teamColor,
-              flag: skin.flag,
-            });
+        // Invisible: completely hidden to everyone else; the caster keeps a
+        // faint ghost of themselves so they can still steer.
+        const invis = (p.invisUntil ?? 0) > now;
+        if (invis) {
+          if (p.id !== myId) {
             ctx.restore();
+            continue;
           }
+          ctx.globalAlpha *= 0.3;
         }
         drawSkin(ctx, p.x, p.y, PLAYER_R, { color: skin.color || teamColor, flag: skin.flag });
         // Chain: line drawn to the hooked player
@@ -2032,7 +2055,7 @@ function EggballPage() {
             }}
             className="px-3 py-1 rounded-md bg-sky-500 hover:bg-sky-400 text-black text-sm font-bold"
           >
-            Leaderboard
+            Scoreboard
           </button>
           <button
             onClick={() => {
@@ -2084,7 +2107,12 @@ function EggballPage() {
         )}
         {logOpen && !shopOpen && !questsOpen && <UpdateLogPanel onClose={() => setLogOpen(false)} />}
         {boardOpen && !shopOpen && !questsOpen && !logOpen && (
-          <LeaderboardPanel onClose={() => setBoardOpen(false)} />
+          <ScoreboardPanel
+            roster={roster}
+            red={score.red}
+            blue={score.blue}
+            onClose={() => setBoardOpen(false)}
+          />
         )}
 
         {showMenu && !shopOpen && !questsOpen && !logOpen && !boardOpen && (

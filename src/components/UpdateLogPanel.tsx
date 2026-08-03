@@ -6,8 +6,25 @@ interface Entry {
 
 export const UPDATES: Entry[] = [
   {
-    version: "v0.6",
+    version: "v0.7",
     date: "Latest",
+    changes: [
+      "Multiplayer rebuilt on proper snapshot interpolation — remote players and the ball are rendered ~110ms in the past and smoothly interpolated between real snapshots, with short dead-reckoning if packets drop.",
+      "Fixed abilities staying active forever online: every outgoing packet now sends timers as time-remaining instead of raw clock stamps.",
+      "Magnet, Freeze and Gamble now work correctly for non-host players.",
+      "Invisible truly hides you on other players' screens.",
+      "Removed Debug and Rush abilities.",
+      "Removed the Leaderboard; added a live Scoreboard showing both teams and each player's goals.",
+      "Kick power reduced a touch.",
+      "Australia and New Zealand skins redrawn with a real Union Jack and Southern Cross.",
+      "Free testing mode is off — real prices are back. All skins cost $1,000, everything else is much pricier for proper grinding.",
+      "Dash is the free starter ability; other abilities must be bought.",
+    ],
+  },
+  {
+    version: "v0.6",
+    date: "Earlier",
+
     changes: [
       "New ability: Freeze — locks the ball in place for 2s (replaces Dribble).",
       "New ability: Bumper — 5s of auto power-blasting any ball you touch.",
