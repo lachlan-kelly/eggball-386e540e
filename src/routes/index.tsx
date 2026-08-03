@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { ShopPanel } from "@/components/ShopPanel";
 import { QuestsPanel } from "@/components/QuestsPanel";
 import { UpdateLogPanel } from "@/components/UpdateLogPanel";
+import { ScoreboardPanel } from "@/components/ScoreboardPanel";
 
 import { drawSkin } from "@/lib/flags";
 import { ABILITIES, GOAL_REWARD, WIN_REWARD, getAbility, getAnthem, getExplosion, getSkin, loadShop, saveShop, DEFAULT_SHOP, type AnthemItem, type EquipKind, type ShopState } from "@/lib/shop";
