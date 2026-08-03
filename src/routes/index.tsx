@@ -940,7 +940,8 @@ function EggballPage() {
               channel.send({ type: "broadcast", event: "swap", payload: { targetId: target.id, x: me.x, y: me.y } });
               target.x = me.x;
               target.y = me.y;
-              targets.get(target.id)?.id && Object.assign(targets.get(target.id)!, { x: me.x, y: me.y });
+              const tb = bufs.get(target.id);
+              if (tb) tb.length = 0;
               me.x = tx;
               me.y = ty;
               swapFxUntil = now + 450;
