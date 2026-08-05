@@ -1191,19 +1191,22 @@ function EggballPage() {
             bumpQuestRef.current("kicks");
             myCharge = 0;
             me.charge = 0;
-            if (hostId === myId) {
-              ball.vx = nvx;
-              ball.vy = nvy;
-              ball.freezeUntil = 0;
-              ballKickedAt = now;
-              lastTouchId = myId;
-            } else {
-              channel.send({
-                type: "broadcast",
-                event: "kick",
-                payload: { bx: ball.x, by: ball.y, bvx: nvx, bvy: nvy, id: myId },
-              });
-            }
+            // Apply the kick locally straight away (every client simulates the
+            // ball) and tell everyone else so their sim matches immediately.
+            ball.vx = nvx;
+            ball.vy = nvy;
+            ball.freezeUntil = 0;
+            ballKickedAt = now;
+            registerTouch(myId);
+            ballTarget.x = ball.x;
+            ballTarget.y = ball.y;
+            ballTarget.vx = nvx;
+            ballTarget.vy = nvy;
+            channel.send({
+              type: "broadcast",
+              event: "kick",
+              payload: { bx: ball.x, by: ball.y, bvx: nvx, bvy: nvy, id: myId },
+            });
 
 
 
@@ -1211,14 +1214,16 @@ function EggballPage() {
         }
       }
 
-      // Host-only: ball physics
+      // Ball physics run on EVERY client so local collisions feel instant; the
+      // host's snapshots only nudge us back if we drift.
       const ballFrozen = (ball.freezeUntil ?? 0) > now;
-      if (hostId === myId && countdown <= 0 && !ended && celebrate <= 0 && ballFrozen) {
+      if (countdown <= 0 && !ended && celebrate <= 0 && ballFrozen) {
         ball.vx = 0;
         ball.vy = 0;
       }
 
-      if (hostId === myId && countdown <= 0 && !ended && celebrate <= 0 && !ballFrozen) {
+      if (countdown <= 0 && !ended && celebrate <= 0 && !ballFrozen) {
+
         // Magnet: any player with an active magnet drags the ball toward them.
         for (const p of players.values()) {
           if (!p.magnetUntil || p.magnetUntil < now) continue;
