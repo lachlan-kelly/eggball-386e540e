@@ -1814,7 +1814,7 @@ function EggballPage() {
 
       // Ball — white with classic black soccer panels, rolling with its motion.
       const frozen = (ball.freezeUntil ?? 0) > now;
-      ballSpin += (Math.hypot(ball.vx, ball.vy) / Math.max(BALL_R, 1)) * dt * (ball.vx >= 0 ? 1 : -1);
+      ballSpin += (Math.hypot(ball.vx, ball.vy) / Math.max(BALL_R, 1)) * 0.016 * (ball.vx >= 0 ? 1 : -1);
       ctx.beginPath();
       ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
       ctx.fillStyle = frozen ? "#dff4ff" : "white";
