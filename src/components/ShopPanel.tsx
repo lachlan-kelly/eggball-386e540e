@@ -71,16 +71,20 @@ export function ShopPanel({
   shop,
   onBuy,
   onEquip,
+  onOpenPack,
   onPreviewAnthem,
   onClose,
 }: {
   shop: ShopState;
   onBuy: (id: string, price: number) => void;
   onEquip: (kind: EquipKind, id: string) => void;
+  onOpenPack: (packId: string) => PackResult | null;
   onPreviewAnthem?: (anthem: AnthemItem) => void;
   onClose: () => void;
 }) {
-  const [section, setSection] = useState<Section>("skins");
+  const [section, setSection] = useState<Section>("packs");
+  const [pull, setPull] = useState<PackResult | null>(null);
+  const [opening, setOpening] = useState(false);
 
   const rows =
     section === "skins"
@@ -88,6 +92,16 @@ export function ShopPanel({
       : section === "explosions"
         ? EXPLOSIONS.map((e) => ({ id: e.id, name: e.name, price: e.price, preview: <ExplosionPreview item={e} />, kind: "explosion" as const }))
         : [];
+
+  const buyPack = (packId: string) => {
+    if (opening) return;
+    setOpening(true);
+    setPull(null);
+    window.setTimeout(() => {
+      setPull(onOpenPack(packId));
+      setOpening(false);
+    }, 550);
+  };
 
   return (
     <div className="absolute inset-0 flex items-center justify-center bg-black/75 rounded-lg p-4">
@@ -100,12 +114,14 @@ export function ShopPanel({
           </div>
           {(
             [
+              ["packs", "Packs"],
               ["skins", "Skins"],
               ["explosions", "Goal Explosions"],
               ["abilities", "Abilities"],
               ["anthems", "Player Anthems"],
             ] as const
           ).map(([id, label]) => (
+
             <button
               key={id}
               onClick={() => setSection(id)}
