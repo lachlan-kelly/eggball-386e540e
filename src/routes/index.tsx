@@ -1277,26 +1277,29 @@ function EggballPage() {
         // Wall collision - but goal openings on left/right.
         // A goal only counts when the WHOLE ball is past the goal line.
         const inGoalY = ball.y > FIELD_H / 2 - GOAL_H / 2 && ball.y < FIELD_H / 2 + GOAL_H / 2;
-        if (inGoalY && ball.x + BALL_R < 0 && goalCooldown <= 0) {
+        if (hostId === myId && inGoalY && ball.x + BALL_R < 0 && goalCooldown <= 0) {
           scoreBlue += 1;
           sfxGoal();
           goalCooldown = 3;
-          startCelebration();
+          // Credit the last BLUE player to touch it — own goals go to the
+          // opposition, never to the poor defender who deflected it.
+          startCelebration("blue");
           checkEnd();
         } else if (!inGoalY && ball.x - BALL_R < 0) {
           ball.x = BALL_R;
           ball.vx = -ball.vx * 0.7;
         }
-        if (inGoalY && ball.x - BALL_R > FIELD_W && goalCooldown <= 0) {
+        if (hostId === myId && inGoalY && ball.x - BALL_R > FIELD_W && goalCooldown <= 0) {
           scoreRed += 1;
           sfxGoal();
           goalCooldown = 3;
-          startCelebration();
+          startCelebration("red");
           checkEnd();
         } else if (!inGoalY && ball.x + BALL_R > FIELD_W) {
           ball.x = FIELD_W - BALL_R;
           ball.vx = -ball.vx * 0.7;
         }
+
         // Back walls of the goal boxes (so the ball doesn't fly off forever)
         if (inGoalY && ball.x - BALL_R < -GOAL_DEPTH) {
           ball.x = -GOAL_DEPTH + BALL_R;
