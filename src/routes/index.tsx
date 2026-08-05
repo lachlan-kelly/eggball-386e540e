@@ -2059,6 +2059,27 @@ function EggballPage() {
     });
   };
 
+  /** Buy + open a pack: charges the price, unlocks the pull or refunds a dupe. */
+  const openPackBuy = (packId: string): PackResult | null => {
+    const pack = getPack(packId);
+    if (!pack) return null;
+    const cost = effectivePrice(pack.price);
+    const current = shopRef.current;
+    if (current.money < cost) return null;
+    const result = openPack(packId, current.owned);
+    if (!result) return null;
+    setShop((prev) => {
+      const money = prev.money - cost + (result.duplicate ? result.refund : 0);
+      const owned = result.duplicate ? prev.owned : [...prev.owned, result.item.id];
+      const next = { ...prev, money, owned };
+      shopRef.current = next;
+      saveShop(next);
+      return next;
+    });
+    return result;
+  };
+
+
   const claimQuest = (scope: "daily" | "weekly", questId: string, reward: number) => {
     setQuests((prev) => {
       const board = prev[scope];
