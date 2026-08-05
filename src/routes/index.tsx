@@ -2201,6 +2201,15 @@ function EggballPage() {
           <button
             onClick={() => {
               closePanels();
+              setFeedbackOpen(true);
+            }}
+            className="px-3 py-1 rounded-md bg-neutral-700 hover:bg-neutral-600 text-sm font-semibold"
+          >
+            Feedback
+          </button>
+          <button
+            onClick={() => {
+              closePanels();
               setLogOpen(true);
             }}
             className="px-3 py-1 rounded-md bg-neutral-700 hover:bg-neutral-600 text-sm font-semibold"
@@ -2223,6 +2232,12 @@ function EggballPage() {
           height={CANVAS_H}
           style={{ width: "100%", height: "100%", display: "block", borderRadius: 8 }}
         />
+        {joined && combo.n > 1 && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-md bg-black/70 text-center">
+            <p className="text-sm font-black text-yellow-400 tabular-nums">{combo.n}x PASS COMBO</p>
+            {combo.reward > 0 && <p className="text-[11px] text-emerald-400">+${combo.reward}</p>}
+          </div>
+        )}
         {joined && !shopOpen && !questsOpen && !logOpen && !showMenu && (
           <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-4">
             <AbilityDial id={shop.ability} frac={abilityUi.frac} armed={abilityUi.armed} roll={abilityUi.roll} />
@@ -2234,10 +2249,13 @@ function EggballPage() {
             shop={shop}
             onBuy={buyItem}
             onEquip={equipItem}
+            onOpenPack={openPackBuy}
             onPreviewAnthem={(a) => playAnthemRef.current(a)}
             onClose={() => setShopOpen(false)}
           />
         )}
+        {feedbackOpen && <FeedbackPanel onClose={() => setFeedbackOpen(false)} />}
+
         {questsOpen && !shopOpen && (
           <QuestsPanel
             quests={quests}
