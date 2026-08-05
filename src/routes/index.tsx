@@ -612,16 +612,15 @@ function EggballPage() {
       if (payload.hostId === myId) return; // ignore our own would-be echoes
       // Lowest id wins host election; ignore state from a higher-id would-be host.
       if (hostId === myId && myId < payload.hostId) return;
-      // Ball is smoothed toward the host's authoritative position.
+      // Every client simulates the ball itself; the host's copy is only used as
+      // a soft correction target so nothing teleports around.
       ballTarget.x = payload.ball.x;
       ballTarget.y = payload.ball.y;
       ballTarget.vx = payload.ball.vx;
       ballTarget.vy = payload.ball.vy;
-      pushSample(ballBuf, { t: performance.now(), x: payload.ball.x, y: payload.ball.y, vx: payload.ball.vx, vy: payload.ball.vy });
-      ball.vx = payload.ball.vx;
-      ball.vy = payload.ball.vy;
+      ballTarget.t = performance.now();
       ball.freezeUntil = payload.ball.freezeUntil ? performance.now() + payload.ball.freezeUntil : 0;
-      
+
       scoreRed = payload.scoreRed;
       scoreBlue = payload.scoreBlue;
       timeLeft = payload.timeLeft;
@@ -634,6 +633,7 @@ function EggballPage() {
       hostId = payload.hostId;
       setScore({ red: scoreRed, blue: scoreBlue, timeLeft, countdown, ended, winner, intermission });
     });
+
 
 
     channel.on("presence", { event: "sync" }, () => {
