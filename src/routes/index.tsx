@@ -448,6 +448,9 @@ function EggballPage() {
     let celebrate = 0;
     let celebrateId = "";
     let lastTouchId = "";
+    /** Visual-only ball rotation so the soccer panels roll. */
+    let ballSpin = 0;
+
     let camZoom = 1;
     let camX = CANVAS_W / 2;
     let camY = CANVAS_H / 2;
