@@ -1241,7 +1241,7 @@ function EggballPage() {
           ball.vy += (dy / d) * MAGNET_ACCEL * dt;
 
 
-          lastTouchId = p.id;
+          registerTouch(p.id);
         }
 
         // Black hole goal explosion: drags every player (and the ball) inward
@@ -1384,7 +1384,7 @@ function EggballPage() {
               ball.vy = (by / bl2) * bpow;
               ball.freezeUntil = 0;
               ballKickedAt = now;
-              lastTouchId = p.id;
+              registerTouch(p.id);
               for (let i = 0; i < 16; i++) {
                 const a = Math.random() * Math.PI * 2;
                 particles.push({ x: ball.x, y: ball.y, vx: Math.cos(a) * 220, vy: Math.sin(a) * 220, life: 0.4, maxLife: 0.4, color: "#fb923c", size: 4 });
@@ -1411,7 +1411,7 @@ function EggballPage() {
                 const speed = along * 0.95;
                 ball.vx = rx * speed;
                 ball.vy = ry * speed;
-                lastTouchId = p.id;
+                registerTouch(p.id);
               } else {
                 ball.vx = 0;
                 ball.vy = 0;
