@@ -1812,15 +1812,43 @@ function EggballPage() {
         ctx.fill();
       }
 
-      // Ball
+      // Ball — white with classic black soccer panels, rolling with its motion.
       const frozen = (ball.freezeUntil ?? 0) > now;
+      ballSpin += (Math.hypot(ball.vx, ball.vy) / Math.max(BALL_R, 1)) * dt * (ball.vx >= 0 ? 1 : -1);
       ctx.beginPath();
       ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
       ctx.fillStyle = frozen ? "#dff4ff" : "white";
       ctx.fill();
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.fillStyle = frozen ? "rgba(30,64,90,0.55)" : "rgba(20,24,31,0.9)";
+      // Centre pentagon
+      const pent = (cx: number, cy: number, r: number, rot: number) => {
+        ctx.beginPath();
+        for (let i = 0; i < 5; i++) {
+          const a = rot + (i / 5) * Math.PI * 2 - Math.PI / 2;
+          const px = cx + Math.cos(a) * r;
+          const py = cy + Math.sin(a) * r;
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+      };
+      pent(ball.x, ball.y, BALL_R * 0.36, ballSpin);
+      for (let i = 0; i < 5; i++) {
+        const a = ballSpin + (i / 5) * Math.PI * 2;
+        pent(ball.x + Math.cos(a) * BALL_R * 0.86, ball.y + Math.sin(a) * BALL_R * 0.86, BALL_R * 0.3, ballSpin + a);
+      }
+      ctx.restore();
       ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
       ctx.strokeStyle = frozen ? "#38bdf8" : "#333";
       ctx.stroke();
+
 
       // Freeze VFX: icy shards + frosty halo
       if (frozen) {
