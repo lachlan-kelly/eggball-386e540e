@@ -1448,6 +1448,29 @@ function EggballPage() {
         }
       }
 
+      // Soft reconciliation: nudge our locally simulated ball toward the host's
+      // last snapshot. Small drift is blended away invisibly; a big divergence
+      // (missed goal reset, packet loss) snaps.
+      if (hostId !== myId && ballTarget.t > 0) {
+        const dxb = ballTarget.x - ball.x;
+        const dyb = ballTarget.y - ball.y;
+        const dist = Math.hypot(dxb, dyb);
+        if (dist > 220) {
+          ball.x = ballTarget.x;
+          ball.y = ballTarget.y;
+          ball.vx = ballTarget.vx;
+          ball.vy = ballTarget.vy;
+        } else if (dist > 1.5) {
+          const k = Math.min(1, dt * 5);
+          ball.x += dxb * k;
+          ball.y += dyb * k;
+          ball.vx += (ballTarget.vx - ball.vx) * Math.min(1, dt * 2);
+          ball.vy += (ballTarget.vy - ball.vy) * Math.min(1, dt * 2);
+        }
+      }
+
+
+
       function checkEnd() {
         const lead = Math.abs(scoreRed - scoreBlue);
         if (lead >= MERCY_LEAD) {
