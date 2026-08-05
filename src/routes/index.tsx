@@ -5,9 +5,12 @@ import { ShopPanel } from "@/components/ShopPanel";
 import { QuestsPanel } from "@/components/QuestsPanel";
 import { UpdateLogPanel } from "@/components/UpdateLogPanel";
 import { ScoreboardPanel } from "@/components/ScoreboardPanel";
+import { FeedbackPanel } from "@/components/FeedbackPanel";
 
 import { drawSkin } from "@/lib/flags";
-import { ABILITIES, GOAL_REWARD, WIN_REWARD, getAbility, getAnthem, getExplosion, getSkin, loadShop, saveShop, DEFAULT_SHOP, type AnthemItem, type EquipKind, type ShopState } from "@/lib/shop";
+import { getPack, openPack, type PackResult } from "@/lib/packs";
+import { ABILITIES, GOAL_REWARD, WIN_REWARD, effectivePrice, getAbility, getAnthem, getExplosion, getSkin, loadShop, saveShop, DEFAULT_SHOP, type AnthemItem, type EquipKind, type ShopState } from "@/lib/shop";
+
 import { addProgress, defaultQuests, loadQuests, refreshQuests, saveQuests, type QuestMetric, type QuestState } from "@/lib/quests";
 
 export const Route = createFileRoute("/")({
@@ -23,7 +26,10 @@ export const Route = createFileRoute("/")({
 });
 
 // ---- Field constants ----
+/** Shown in the header so players know which build they're on. */
+const VERSION = "v1.8";
 const FIELD_W = 1400;
+
 const FIELD_H = 720;
 const PAD = 70; // padded canvas area around the field so goals + out-of-bounds are visible
 const CANVAS_W = FIELD_W + PAD * 2;
@@ -214,6 +220,9 @@ function EggballPage() {
   const [teamCounts, setTeamCounts] = useState({ red: 0, blue: 0 });
   // 0..1 readiness of the equipped ability (1 = ready), plus armed / gamble roll state
   const [abilityUi, setAbilityUi] = useState({ frac: 1, armed: false, roll: 0 });
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [combo, setCombo] = useState({ n: 0, reward: 0, at: 0 });
+
 
   const closePanels = () => {
     setShopOpen(false);
@@ -221,7 +230,9 @@ function EggballPage() {
     setLogOpen(false);
     setBoardOpen(false);
     setMenuOpen(false);
+    setFeedbackOpen(false);
   };
+
 
   /** Teams must stay within TEAM_GAP players of each other. */
   const canJoin = (t: Exclude<Team, null>) => {
@@ -384,8 +395,51 @@ function EggballPage() {
       if (buf.length > 20) buf.splice(0, buf.length - 20);
     };
     const ball: BallState = { x: FIELD_W / 2, y: FIELD_H / 2, vx: 0, vy: 0 };
-    /** Host's authoritative ball position (non-hosts smooth toward it). */
-    const ballTarget = { x: FIELD_W / 2, y: FIELD_H / 2, vx: 0, vy: 0 };
+    /** Host's last reported ball state — used as a soft correction target only. */
+    const ballTarget = { x: FIELD_W / 2, y: FIELD_H / 2, vx: 0, vy: 0, t: 0 };
+    /** Combo passing: who touched the ball last, and when. */
+    let comboLastToucher = "";
+    let comboLastTouchAt = 0;
+    let comboCount = 0;
+    /** Last player from each team to touch the ball (for goal credit). */
+    const lastTouchByTeam: Record<"red" | "blue", string> = { red: "", blue: "" };
+    const COMBO_WINDOW = 3000;
+    const COMBO_REWARD = 40;
+    /**
+     * Records a ball touch: keeps goal-credit bookkeeping and runs the pass
+     * combo (consecutive passes between different teammates within 3s).
+     */
+    const registerTouch = (id: string) => {
+      const t = performance.now();
+      lastTouchId = id;
+      const p = players.get(id);
+      if (p && (p.team === "red" || p.team === "blue")) lastTouchByTeam[p.team] = id;
+      if (comboLastToucher === id) {
+        comboLastTouchAt = t;
+        return;
+      }
+      const prev = comboLastToucher ? players.get(comboLastToucher) : undefined;
+      const passed = !!prev && !!p && prev.team === p.team && t - comboLastTouchAt < COMBO_WINDOW;
+      if (passed) {
+        comboCount += 1;
+        const reward = COMBO_REWARD * comboCount;
+        if (id === myId) addMoneyRef.current(reward);
+        if (p?.team === (players.get(myId)?.team ?? null)) setCombo({ n: comboCount, reward, at: t });
+      } else {
+        comboCount = 0;
+        setCombo({ n: 0, reward: 0, at: t });
+      }
+      comboLastToucher = id;
+      comboLastTouchAt = t;
+    };
+    const resetCombo = () => {
+      comboCount = 0;
+      comboLastToucher = "";
+      comboLastTouchAt = 0;
+      setCombo({ n: 0, reward: 0, at: 0 });
+    };
+
+
 
     let scoreRed = 0;
     let scoreBlue = 0;
@@ -402,6 +456,9 @@ function EggballPage() {
     let celebrate = 0;
     let celebrateId = "";
     let lastTouchId = "";
+    /** Visual-only ball rotation so the soccer panels roll. */
+    let ballSpin = 0;
+
     let camZoom = 1;
     let camX = CANVAS_W / 2;
     let camY = CANVAS_H / 2;
@@ -547,25 +604,26 @@ function EggballPage() {
       knownIds.delete(payload.id);
     });
     channel.on("broadcast", { event: "kick" }, ({ payload }: { payload: { bx: number; by: number; bvx: number; bvy: number; id?: string } }) => {
-      // Only host authoritative on ball, but any client can announce a kick they applied.
-      if (hostId === myId) {
-        ball.x = payload.bx;
-        ball.y = payload.by;
-        ball.vx = payload.bvx;
-        ball.vy = payload.bvy;
-        ball.freezeUntil = 0;
-        ballKickedAt = performance.now();
-        if (payload.id) lastTouchId = payload.id;
-      }
+      // Everyone simulates the ball, so everyone applies a kick the moment they hear it.
+      ball.x = payload.bx;
+      ball.y = payload.by;
+      ball.vx = payload.bvx;
+      ball.vy = payload.bvy;
+      ball.freezeUntil = 0;
+      ballKickedAt = performance.now();
+      ballTarget.x = ball.x;
+      ballTarget.y = ball.y;
+      ballTarget.vx = ball.vx;
+      ballTarget.vy = ball.vy;
+      if (payload.id) registerTouch(payload.id);
     });
     channel.on("broadcast", { event: "freeze" }, () => {
-      if (hostId === myId) {
-        // Remote clocks differ — freeze for the standard duration from now.
-        ball.freezeUntil = performance.now() + FREEZE_TIME * 1000;
-        ball.vx = 0;
-        ball.vy = 0;
-      }
+      // Remote clocks differ — freeze for the standard duration from now.
+      ball.freezeUntil = performance.now() + FREEZE_TIME * 1000;
+      ball.vx = 0;
+      ball.vy = 0;
     });
+
     channel.on("broadcast", { event: "rewind" }, () => {
       if (hostId === myId) {
         const target = performance.now() - REWIND_SECONDS * 1000;
@@ -612,16 +670,15 @@ function EggballPage() {
       if (payload.hostId === myId) return; // ignore our own would-be echoes
       // Lowest id wins host election; ignore state from a higher-id would-be host.
       if (hostId === myId && myId < payload.hostId) return;
-      // Ball is smoothed toward the host's authoritative position.
+      // Every client simulates the ball itself; the host's copy is only used as
+      // a soft correction target so nothing teleports around.
       ballTarget.x = payload.ball.x;
       ballTarget.y = payload.ball.y;
       ballTarget.vx = payload.ball.vx;
       ballTarget.vy = payload.ball.vy;
-      pushSample(ballBuf, { t: performance.now(), x: payload.ball.x, y: payload.ball.y, vx: payload.ball.vx, vy: payload.ball.vy });
-      ball.vx = payload.ball.vx;
-      ball.vy = payload.ball.vy;
+      ballTarget.t = performance.now();
       ball.freezeUntil = payload.ball.freezeUntil ? performance.now() + payload.ball.freezeUntil : 0;
-      
+
       scoreRed = payload.scoreRed;
       scoreBlue = payload.scoreBlue;
       timeLeft = payload.timeLeft;
@@ -634,6 +691,7 @@ function EggballPage() {
       hostId = payload.hostId;
       setScore({ red: scoreRed, blue: scoreBlue, timeLeft, countdown, ended, winner, intermission });
     });
+
 
 
     channel.on("presence", { event: "sync" }, () => {
@@ -726,7 +784,12 @@ function EggballPage() {
       ballTarget.y = ball.y;
       ballTarget.vx = 0;
       ballTarget.vy = 0;
+      ballTarget.t = performance.now();
+      lastTouchByTeam.red = "";
+      lastTouchByTeam.blue = "";
+      resetCombo();
     }
+
 
     /** Host-side kickoff: reset locally and tell everyone else where to stand. */
     function resetPositions() {
@@ -857,14 +920,8 @@ function EggballPage() {
         p.x += (s.x - p.x) * k;
         p.y += (s.y - p.y) * k;
       }
-      if (hostId !== myId) {
-        const s = sampleAt(ballBuf, renderTime);
-        if (s) {
-          const k = Math.min(1, dt * 30);
-          ball.x += (s.x - ball.x) * k;
-          ball.y += (s.y - ball.y) * k;
-        }
-      }
+      // (Ball is simulated locally by every client and reconciled after physics.)
+
 
       // Chain: if someone hooked us, reel ourselves toward them.
       if (chainedUntil > now) {
@@ -1144,19 +1201,22 @@ function EggballPage() {
             bumpQuestRef.current("kicks");
             myCharge = 0;
             me.charge = 0;
-            if (hostId === myId) {
-              ball.vx = nvx;
-              ball.vy = nvy;
-              ball.freezeUntil = 0;
-              ballKickedAt = now;
-              lastTouchId = myId;
-            } else {
-              channel.send({
-                type: "broadcast",
-                event: "kick",
-                payload: { bx: ball.x, by: ball.y, bvx: nvx, bvy: nvy, id: myId },
-              });
-            }
+            // Apply the kick locally straight away (every client simulates the
+            // ball) and tell everyone else so their sim matches immediately.
+            ball.vx = nvx;
+            ball.vy = nvy;
+            ball.freezeUntil = 0;
+            ballKickedAt = now;
+            registerTouch(myId);
+            ballTarget.x = ball.x;
+            ballTarget.y = ball.y;
+            ballTarget.vx = nvx;
+            ballTarget.vy = nvy;
+            channel.send({
+              type: "broadcast",
+              event: "kick",
+              payload: { bx: ball.x, by: ball.y, bvx: nvx, bvy: nvy, id: myId },
+            });
 
 
 
@@ -1164,14 +1224,16 @@ function EggballPage() {
         }
       }
 
-      // Host-only: ball physics
+      // Ball physics run on EVERY client so local collisions feel instant; the
+      // host's snapshots only nudge us back if we drift.
       const ballFrozen = (ball.freezeUntil ?? 0) > now;
-      if (hostId === myId && countdown <= 0 && !ended && celebrate <= 0 && ballFrozen) {
+      if (countdown <= 0 && !ended && celebrate <= 0 && ballFrozen) {
         ball.vx = 0;
         ball.vy = 0;
       }
 
-      if (hostId === myId && countdown <= 0 && !ended && celebrate <= 0 && !ballFrozen) {
+      if (countdown <= 0 && !ended && celebrate <= 0 && !ballFrozen) {
+
         // Magnet: any player with an active magnet drags the ball toward them.
         for (const p of players.values()) {
           if (!p.magnetUntil || p.magnetUntil < now) continue;
@@ -1189,7 +1251,7 @@ function EggballPage() {
           ball.vy += (dy / d) * MAGNET_ACCEL * dt;
 
 
-          lastTouchId = p.id;
+          registerTouch(p.id);
         }
 
         // Black hole goal explosion: drags every player (and the ball) inward
@@ -1225,26 +1287,29 @@ function EggballPage() {
         // Wall collision - but goal openings on left/right.
         // A goal only counts when the WHOLE ball is past the goal line.
         const inGoalY = ball.y > FIELD_H / 2 - GOAL_H / 2 && ball.y < FIELD_H / 2 + GOAL_H / 2;
-        if (inGoalY && ball.x + BALL_R < 0 && goalCooldown <= 0) {
+        if (hostId === myId && inGoalY && ball.x + BALL_R < 0 && goalCooldown <= 0) {
           scoreBlue += 1;
           sfxGoal();
           goalCooldown = 3;
-          startCelebration();
+          // Credit the last BLUE player to touch it — own goals go to the
+          // opposition, never to the poor defender who deflected it.
+          startCelebration("blue");
           checkEnd();
         } else if (!inGoalY && ball.x - BALL_R < 0) {
           ball.x = BALL_R;
           ball.vx = -ball.vx * 0.7;
         }
-        if (inGoalY && ball.x - BALL_R > FIELD_W && goalCooldown <= 0) {
+        if (hostId === myId && inGoalY && ball.x - BALL_R > FIELD_W && goalCooldown <= 0) {
           scoreRed += 1;
           sfxGoal();
           goalCooldown = 3;
-          startCelebration();
+          startCelebration("red");
           checkEnd();
         } else if (!inGoalY && ball.x + BALL_R > FIELD_W) {
           ball.x = FIELD_W - BALL_R;
           ball.vx = -ball.vx * 0.7;
         }
+
         // Back walls of the goal boxes (so the ball doesn't fly off forever)
         if (inGoalY && ball.x - BALL_R < -GOAL_DEPTH) {
           ball.x = -GOAL_DEPTH + BALL_R;
@@ -1329,7 +1394,7 @@ function EggballPage() {
               ball.vy = (by / bl2) * bpow;
               ball.freezeUntil = 0;
               ballKickedAt = now;
-              lastTouchId = p.id;
+              registerTouch(p.id);
               for (let i = 0; i < 16; i++) {
                 const a = Math.random() * Math.PI * 2;
                 particles.push({ x: ball.x, y: ball.y, vx: Math.cos(a) * 220, vy: Math.sin(a) * 220, life: 0.4, maxLife: 0.4, color: "#fb923c", size: 4 });
@@ -1356,7 +1421,7 @@ function EggballPage() {
                 const speed = along * 0.95;
                 ball.vx = rx * speed;
                 ball.vy = ry * speed;
-                lastTouchId = p.id;
+                registerTouch(p.id);
               } else {
                 ball.vx = 0;
                 ball.vy = 0;
@@ -1392,6 +1457,32 @@ function EggballPage() {
           }
         }
       }
+      // Combo expires after 3 seconds without a touch.
+      if (comboCount > 0 && now - comboLastTouchAt > COMBO_WINDOW) resetCombo();
+
+
+      // Soft reconciliation: nudge our locally simulated ball toward the host's
+      // last snapshot. Small drift is blended away invisibly; a big divergence
+      // (missed goal reset, packet loss) snaps.
+      if (hostId !== myId && ballTarget.t > 0) {
+        const dxb = ballTarget.x - ball.x;
+        const dyb = ballTarget.y - ball.y;
+        const dist = Math.hypot(dxb, dyb);
+        if (dist > 220) {
+          ball.x = ballTarget.x;
+          ball.y = ballTarget.y;
+          ball.vx = ballTarget.vx;
+          ball.vy = ballTarget.vy;
+        } else if (dist > 1.5) {
+          const k = Math.min(1, dt * 5);
+          ball.x += dxb * k;
+          ball.y += dyb * k;
+          ball.vx += (ballTarget.vx - ball.vx) * Math.min(1, dt * 2);
+          ball.vy += (ballTarget.vy - ball.vy) * Math.min(1, dt * 2);
+        }
+      }
+
+
 
       function checkEnd() {
         const lead = Math.abs(scoreRed - scoreBlue);
@@ -1406,9 +1497,10 @@ function EggballPage() {
 
       // Goal scored: freeze the ball and run a short celebration camera on the
       // scorer before the 3-2-1 restart. Players can still run around.
-      function startCelebration() {
+      function startCelebration(scoringTeam?: "red" | "blue") {
         celebrate = 2.6;
-        celebrateId = lastTouchId;
+        celebrateId = scoringTeam ? lastTouchByTeam[scoringTeam] || lastTouchId : lastTouchId;
+
         ball.vx = 0;
         ball.vy = 0;
       }
@@ -1542,8 +1634,9 @@ function EggballPage() {
       const ctx = c.getContext("2d");
       if (!ctx) return;
       // Clear whole canvas (out-of-bounds strip)
-      ctx.fillStyle = "#0f172a";
+      ctx.fillStyle = "#f5f1e8";
       ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
 
       // Goal-celebration camera: smoothly zoom in on the scorer, then back out.
       const camTarget = celebrate > 0 && celebrateId ? players.get(celebrateId) : undefined;
@@ -1731,15 +1824,43 @@ function EggballPage() {
         ctx.fill();
       }
 
-      // Ball
+      // Ball — white with classic black soccer panels, rolling with its motion.
       const frozen = (ball.freezeUntil ?? 0) > now;
+      ballSpin += (Math.hypot(ball.vx, ball.vy) / Math.max(BALL_R, 1)) * 0.016 * (ball.vx >= 0 ? 1 : -1);
       ctx.beginPath();
       ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
       ctx.fillStyle = frozen ? "#dff4ff" : "white";
       ctx.fill();
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.fillStyle = frozen ? "rgba(30,64,90,0.55)" : "rgba(20,24,31,0.9)";
+      // Centre pentagon
+      const pent = (cx: number, cy: number, r: number, rot: number) => {
+        ctx.beginPath();
+        for (let i = 0; i < 5; i++) {
+          const a = rot + (i / 5) * Math.PI * 2 - Math.PI / 2;
+          const px = cx + Math.cos(a) * r;
+          const py = cy + Math.sin(a) * r;
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+      };
+      pent(ball.x, ball.y, BALL_R * 0.36, ballSpin);
+      for (let i = 0; i < 5; i++) {
+        const a = ballSpin + (i / 5) * Math.PI * 2;
+        pent(ball.x + Math.cos(a) * BALL_R * 0.86, ball.y + Math.sin(a) * BALL_R * 0.86, BALL_R * 0.3, ballSpin + a);
+      }
+      ctx.restore();
       ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
       ctx.strokeStyle = frozen ? "#38bdf8" : "#333";
       ctx.stroke();
+
 
       // Freeze VFX: icy shards + frosty halo
       if (frozen) {
@@ -1946,6 +2067,27 @@ function EggballPage() {
     });
   };
 
+  /** Buy + open a pack: charges the price, unlocks the pull or refunds a dupe. */
+  const openPackBuy = (packId: string): PackResult | null => {
+    const pack = getPack(packId);
+    if (!pack) return null;
+    const cost = effectivePrice(pack.price);
+    const current = shopRef.current;
+    if (current.money < cost) return null;
+    const result = openPack(packId, current.owned);
+    if (!result) return null;
+    setShop((prev) => {
+      const money = prev.money - cost + (result.duplicate ? result.refund : 0);
+      const owned = result.duplicate ? prev.owned : [...prev.owned, result.item.id];
+      const next = { ...prev, money, owned };
+      shopRef.current = next;
+      saveShop(next);
+      return next;
+    });
+    return result;
+  };
+
+
   const claimQuest = (scope: "daily" | "weekly", questId: string, reward: number) => {
     setQuests((prev) => {
       const board = prev[scope];
@@ -2027,13 +2169,17 @@ function EggballPage() {
 
         </div>
         {/* Centre scoreboard */}
-        <div className="flex items-center justify-center gap-6 text-2xl font-bold">
-          <span className="text-red-400">RED {score.red}</span>
-          <span className="text-neutral-300 text-lg tabular-nums">
-            {mm}:{ss}
-          </span>
-          <span className="text-blue-400">{score.blue} BLUE</span>
+        <div className="flex flex-col items-center justify-center">
+          <span className="text-[10px] font-bold tracking-[0.3em] text-neutral-500">EGGBALL {VERSION}</span>
+          <div className="flex items-center justify-center gap-6 text-2xl font-bold">
+            <span className="text-red-400">RED {score.red}</span>
+            <span className="text-neutral-300 text-lg tabular-nums">
+              {mm}:{ss}
+            </span>
+            <span className="text-blue-400">{score.blue} BLUE</span>
+          </div>
         </div>
+
         {/* Right buttons */}
         <div className="flex items-center gap-2 justify-end">
           <span className="text-sm font-bold text-yellow-400">${shop.money.toLocaleString()}</span>
@@ -2060,6 +2206,15 @@ function EggballPage() {
           <button
             onClick={() => {
               closePanels();
+              setFeedbackOpen(true);
+            }}
+            className="px-3 py-1 rounded-md bg-neutral-700 hover:bg-neutral-600 text-sm font-semibold"
+          >
+            Feedback
+          </button>
+          <button
+            onClick={() => {
+              closePanels();
               setLogOpen(true);
             }}
             className="px-3 py-1 rounded-md bg-neutral-700 hover:bg-neutral-600 text-sm font-semibold"
@@ -2082,6 +2237,12 @@ function EggballPage() {
           height={CANVAS_H}
           style={{ width: "100%", height: "100%", display: "block", borderRadius: 8 }}
         />
+        {joined && combo.n > 1 && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-md bg-black/70 text-center">
+            <p className="text-sm font-black text-yellow-400 tabular-nums">{combo.n}x PASS COMBO</p>
+            {combo.reward > 0 && <p className="text-[11px] text-emerald-400">+${combo.reward}</p>}
+          </div>
+        )}
         {joined && !shopOpen && !questsOpen && !logOpen && !showMenu && (
           <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-4">
             <AbilityDial id={shop.ability} frac={abilityUi.frac} armed={abilityUi.armed} roll={abilityUi.roll} />
@@ -2093,10 +2254,13 @@ function EggballPage() {
             shop={shop}
             onBuy={buyItem}
             onEquip={equipItem}
+            onOpenPack={openPackBuy}
             onPreviewAnthem={(a) => playAnthemRef.current(a)}
             onClose={() => setShopOpen(false)}
           />
         )}
+        {feedbackOpen && <FeedbackPanel onClose={() => setFeedbackOpen(false)} />}
+
         {questsOpen && !shopOpen && (
           <QuestsPanel
             quests={quests}

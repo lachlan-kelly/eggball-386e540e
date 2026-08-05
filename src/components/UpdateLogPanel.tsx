@@ -6,6 +6,22 @@ interface Entry {
 
 export const UPDATES: Entry[] = [
   {
+    version: "v1.8",
+    date: "Latest",
+    changes: [
+      "Pass combos: chain passes between teammates within 3 seconds to build a combo and earn money — resets on interception, a self-pass, 3 seconds of no touches, or a new round.",
+      "Packs are in: Bronze, Silver, Gold and Legend packs roll random skins, goal explosions and anthems by rarity. Duplicates refund 35%.",
+      "Abilities are now bought in the shop (Dash stays free) and everything costs real money again — beta free mode is over.",
+      "Netcode rebuilt: every player now simulates the ball locally with soft correction from the host, so collisions and dribbling feel instant instead of laggy.",
+      "Own goals now credit the last opponent to touch the ball, not the defender who deflected it.",
+      "The ball has proper black-and-white soccer panels that roll as it moves.",
+      "Out-of-bounds area is now a light chalk colour instead of dark navy.",
+      "Release version is shown at the top of the screen.",
+      "New anonymous Feedback button — send up to 500 characters straight to the devs.",
+    ],
+  },
+  {
+
     version: "v0.7",
     date: "Latest",
     changes: [
