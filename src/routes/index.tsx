@@ -1446,6 +1446,9 @@ function EggballPage() {
           }
         }
       }
+      // Combo expires after 3 seconds without a touch.
+      if (comboCount > 0 && now - comboLastTouchAt > COMBO_WINDOW) resetCombo();
+
 
       // Soft reconciliation: nudge our locally simulated ball toward the host's
       // last snapshot. Small drift is blended away invisibly; a big divergence
