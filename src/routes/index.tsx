@@ -384,8 +384,15 @@ function EggballPage() {
       if (buf.length > 20) buf.splice(0, buf.length - 20);
     };
     const ball: BallState = { x: FIELD_W / 2, y: FIELD_H / 2, vx: 0, vy: 0 };
-    /** Host's authoritative ball position (non-hosts smooth toward it). */
-    const ballTarget = { x: FIELD_W / 2, y: FIELD_H / 2, vx: 0, vy: 0 };
+    /** Host's last reported ball state — used as a soft correction target only. */
+    const ballTarget = { x: FIELD_W / 2, y: FIELD_H / 2, vx: 0, vy: 0, t: 0 };
+    /** Combo passing: who touched the ball last, and when. */
+    let comboLastToucher = "";
+    let comboLastTouchAt = 0;
+    let comboCount = 0;
+    /** Last player from each team to touch the ball (for goal credit). */
+    const lastTouchByTeam: Record<"red" | "blue", string> = { red: "", blue: "" };
+
 
     let scoreRed = 0;
     let scoreBlue = 0;
