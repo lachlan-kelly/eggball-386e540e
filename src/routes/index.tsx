@@ -5,9 +5,12 @@ import { ShopPanel } from "@/components/ShopPanel";
 import { QuestsPanel } from "@/components/QuestsPanel";
 import { UpdateLogPanel } from "@/components/UpdateLogPanel";
 import { ScoreboardPanel } from "@/components/ScoreboardPanel";
+import { FeedbackPanel } from "@/components/FeedbackPanel";
 
 import { drawSkin } from "@/lib/flags";
-import { ABILITIES, GOAL_REWARD, WIN_REWARD, getAbility, getAnthem, getExplosion, getSkin, loadShop, saveShop, DEFAULT_SHOP, type AnthemItem, type EquipKind, type ShopState } from "@/lib/shop";
+import { getPack, openPack, type PackResult } from "@/lib/packs";
+import { ABILITIES, GOAL_REWARD, WIN_REWARD, effectivePrice, getAbility, getAnthem, getExplosion, getSkin, loadShop, saveShop, DEFAULT_SHOP, type AnthemItem, type EquipKind, type ShopState } from "@/lib/shop";
+
 import { addProgress, defaultQuests, loadQuests, refreshQuests, saveQuests, type QuestMetric, type QuestState } from "@/lib/quests";
 
 export const Route = createFileRoute("/")({
