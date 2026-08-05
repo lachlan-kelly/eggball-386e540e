@@ -1461,9 +1461,10 @@ function EggballPage() {
 
       // Goal scored: freeze the ball and run a short celebration camera on the
       // scorer before the 3-2-1 restart. Players can still run around.
-      function startCelebration() {
+      function startCelebration(scoringTeam?: "red" | "blue") {
         celebrate = 2.6;
-        celebrateId = lastTouchId;
+        celebrateId = scoringTeam ? lastTouchByTeam[scoringTeam] || lastTouchId : lastTouchId;
+
         ball.vx = 0;
         ball.vy = 0;
       }
