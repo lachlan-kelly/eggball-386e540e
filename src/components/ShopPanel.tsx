@@ -14,12 +14,13 @@ import {
   type ExplosionItem,
 } from "@/lib/shop";
 
-type Section = "skins" | "explosions" | "abilities" | "anthems";
+type Section = "packs" | "skins" | "explosions" | "abilities" | "anthems";
 
 function priceLabel(list: number) {
   if (list === 0) return "Free";
   return FREE_MODE ? `Free (normally $${list.toLocaleString()})` : `$${list.toLocaleString()}`;
 }
+
 
 function SkinPreview({ skin }: { skin: SkinItem }) {
   const ref = useRef<HTMLCanvasElement | null>(null);
