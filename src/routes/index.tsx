@@ -773,7 +773,12 @@ function EggballPage() {
       ballTarget.y = ball.y;
       ballTarget.vx = 0;
       ballTarget.vy = 0;
+      ballTarget.t = performance.now();
+      lastTouchByTeam.red = "";
+      lastTouchByTeam.blue = "";
+      resetCombo();
     }
+
 
     /** Host-side kickoff: reset locally and tell everyone else where to stand. */
     function resetPositions() {
