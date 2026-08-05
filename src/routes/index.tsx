@@ -26,7 +26,10 @@ export const Route = createFileRoute("/")({
 });
 
 // ---- Field constants ----
+/** Shown in the header so players know which build they're on. */
+const VERSION = "v1.8";
 const FIELD_W = 1400;
+
 const FIELD_H = 720;
 const PAD = 70; // padded canvas area around the field so goals + out-of-bounds are visible
 const CANVAS_W = FIELD_W + PAD * 2;
