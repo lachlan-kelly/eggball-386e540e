@@ -214,6 +214,9 @@ function EggballPage() {
   const [teamCounts, setTeamCounts] = useState({ red: 0, blue: 0 });
   // 0..1 readiness of the equipped ability (1 = ready), plus armed / gamble roll state
   const [abilityUi, setAbilityUi] = useState({ frac: 1, armed: false, roll: 0 });
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [combo, setCombo] = useState({ n: 0, reward: 0, at: 0 });
+
 
   const closePanels = () => {
     setShopOpen(false);
