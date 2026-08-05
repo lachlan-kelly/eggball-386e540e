@@ -1626,8 +1626,9 @@ function EggballPage() {
       const ctx = c.getContext("2d");
       if (!ctx) return;
       // Clear whole canvas (out-of-bounds strip)
-      ctx.fillStyle = "#0f172a";
+      ctx.fillStyle = "#f5f1e8";
       ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
 
       // Goal-celebration camera: smoothly zoom in on the scorer, then back out.
       const camTarget = celebrate > 0 && celebrateId ? players.get(celebrateId) : undefined;
