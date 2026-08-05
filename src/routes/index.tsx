@@ -554,25 +554,26 @@ function EggballPage() {
       knownIds.delete(payload.id);
     });
     channel.on("broadcast", { event: "kick" }, ({ payload }: { payload: { bx: number; by: number; bvx: number; bvy: number; id?: string } }) => {
-      // Only host authoritative on ball, but any client can announce a kick they applied.
-      if (hostId === myId) {
-        ball.x = payload.bx;
-        ball.y = payload.by;
-        ball.vx = payload.bvx;
-        ball.vy = payload.bvy;
-        ball.freezeUntil = 0;
-        ballKickedAt = performance.now();
-        if (payload.id) lastTouchId = payload.id;
-      }
+      // Everyone simulates the ball, so everyone applies a kick the moment they hear it.
+      ball.x = payload.bx;
+      ball.y = payload.by;
+      ball.vx = payload.bvx;
+      ball.vy = payload.bvy;
+      ball.freezeUntil = 0;
+      ballKickedAt = performance.now();
+      ballTarget.x = ball.x;
+      ballTarget.y = ball.y;
+      ballTarget.vx = ball.vx;
+      ballTarget.vy = ball.vy;
+      if (payload.id) registerTouch(payload.id);
     });
     channel.on("broadcast", { event: "freeze" }, () => {
-      if (hostId === myId) {
-        // Remote clocks differ — freeze for the standard duration from now.
-        ball.freezeUntil = performance.now() + FREEZE_TIME * 1000;
-        ball.vx = 0;
-        ball.vy = 0;
-      }
+      // Remote clocks differ — freeze for the standard duration from now.
+      ball.freezeUntil = performance.now() + FREEZE_TIME * 1000;
+      ball.vx = 0;
+      ball.vy = 0;
     });
+
     channel.on("broadcast", { event: "rewind" }, () => {
       if (hostId === myId) {
         const target = performance.now() - REWIND_SECONDS * 1000;
