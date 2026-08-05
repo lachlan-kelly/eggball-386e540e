@@ -227,7 +227,9 @@ function EggballPage() {
     setLogOpen(false);
     setBoardOpen(false);
     setMenuOpen(false);
+    setFeedbackOpen(false);
   };
+
 
   /** Teams must stay within TEAM_GAP players of each other. */
   const canJoin = (t: Exclude<Team, null>) => {
