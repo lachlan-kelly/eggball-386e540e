@@ -904,14 +904,8 @@ function EggballPage() {
         p.x += (s.x - p.x) * k;
         p.y += (s.y - p.y) * k;
       }
-      if (hostId !== myId) {
-        const s = sampleAt(ballBuf, renderTime);
-        if (s) {
-          const k = Math.min(1, dt * 30);
-          ball.x += (s.x - ball.x) * k;
-          ball.y += (s.y - ball.y) * k;
-        }
-      }
+      // (Ball is simulated locally by every client and reconciled after physics.)
+
 
       // Chain: if someone hooked us, reel ourselves toward them.
       if (chainedUntil > now) {
