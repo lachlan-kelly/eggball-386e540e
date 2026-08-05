@@ -2164,13 +2164,17 @@ function EggballPage() {
 
         </div>
         {/* Centre scoreboard */}
-        <div className="flex items-center justify-center gap-6 text-2xl font-bold">
-          <span className="text-red-400">RED {score.red}</span>
-          <span className="text-neutral-300 text-lg tabular-nums">
-            {mm}:{ss}
-          </span>
-          <span className="text-blue-400">{score.blue} BLUE</span>
+        <div className="flex flex-col items-center justify-center">
+          <span className="text-[10px] font-bold tracking-[0.3em] text-neutral-500">EGGBALL {VERSION}</span>
+          <div className="flex items-center justify-center gap-6 text-2xl font-bold">
+            <span className="text-red-400">RED {score.red}</span>
+            <span className="text-neutral-300 text-lg tabular-nums">
+              {mm}:{ss}
+            </span>
+            <span className="text-blue-400">{score.blue} BLUE</span>
+          </div>
         </div>
+
         {/* Right buttons */}
         <div className="flex items-center gap-2 justify-end">
           <span className="text-sm font-bold text-yellow-400">${shop.money.toLocaleString()}</span>
