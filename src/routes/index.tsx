@@ -395,6 +395,42 @@ function EggballPage() {
     let comboCount = 0;
     /** Last player from each team to touch the ball (for goal credit). */
     const lastTouchByTeam: Record<"red" | "blue", string> = { red: "", blue: "" };
+    const COMBO_WINDOW = 3000;
+    const COMBO_REWARD = 40;
+    /**
+     * Records a ball touch: keeps goal-credit bookkeeping and runs the pass
+     * combo (consecutive passes between different teammates within 3s).
+     */
+    const registerTouch = (id: string) => {
+      const t = performance.now();
+      lastTouchId = id;
+      const p = players.get(id);
+      if (p && (p.team === "red" || p.team === "blue")) lastTouchByTeam[p.team] = id;
+      if (comboLastToucher === id) {
+        comboLastTouchAt = t;
+        return;
+      }
+      const prev = comboLastToucher ? players.get(comboLastToucher) : undefined;
+      const passed = !!prev && !!p && prev.team === p.team && t - comboLastTouchAt < COMBO_WINDOW;
+      if (passed) {
+        comboCount += 1;
+        const reward = COMBO_REWARD * comboCount;
+        if (id === myId) addMoneyRef.current(reward);
+        if (p?.team === (players.get(myId)?.team ?? null)) setCombo({ n: comboCount, reward, at: t });
+      } else {
+        comboCount = 0;
+        setCombo({ n: 0, reward: 0, at: t });
+      }
+      comboLastToucher = id;
+      comboLastTouchAt = t;
+    };
+    const resetCombo = () => {
+      comboCount = 0;
+      comboLastToucher = "";
+      comboLastTouchAt = 0;
+      setCombo({ n: 0, reward: 0, at: 0 });
+    };
+
 
 
     let scoreRed = 0;
