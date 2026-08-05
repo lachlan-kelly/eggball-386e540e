@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { drawSkin } from "@/lib/flags";
+import { PACKS, RARITY_META, type PackResult } from "@/lib/packs";
 import {
   ABILITIES,
   ANTHEMS,
@@ -13,6 +14,7 @@ import {
   type SkinItem,
   type ExplosionItem,
 } from "@/lib/shop";
+
 
 type Section = "packs" | "skins" | "explosions" | "abilities" | "anthems";
 
